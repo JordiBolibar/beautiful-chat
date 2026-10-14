@@ -3,7 +3,9 @@ import { useSyncExternalStore } from "react";
 export const ACCENT_PRESETS = {
   host: undefined,
   jade: "#10b981",
-  violet: "#8b5cf6",
+  // Dimmed, desaturated cut of #8b5cf6 (same 262° hue): accent tints and
+  // running states stay readable without the neon cast.
+  violet: "#8a70b8",
   amber: "#f59e0b",
   rose: "#f43f5e",
 } as const;

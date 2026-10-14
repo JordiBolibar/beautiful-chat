@@ -18,14 +18,14 @@ export const radius = { card: 12, block: 8, chip: 5 } as const;
  * default. Fallbacks live in the `@font-face` `src` chain instead, so these
  * names always resolve to something.
  */
-export const fontMono = "OMP Iosevka";
+export const fontMono = "Paseo System Mono";
 
 /**
- * The ligature cut of Iosevka, used only inside code blocks. Terminal output,
- * diffs and paths stay on `fontMono`: a shaped `->` or `=>` stops matching the
- * bytes it stands for, which is wrong for a log line or a patch.
+ * Same family as `fontMono`: this checkout aliases the code font to the host's
+ * system monospace (see `embed-fonts.ts`) instead of the embedded ligature
+ * cut, so the "code glyphs" preference no longer changes the face.
  */
-export const fontCode = "OMP Iosevka Code";
+export const fontCode = "Paseo System Mono";
 export const fontUi = "OMP Inter";
 
 export interface ExtendedThemeTokens {

@@ -388,9 +388,18 @@ function startController(): Controller {
  * and feeds it the live theme. Call it from every renderer: the bar is shared,
  * so the calls are reference counts rather than instances.
  */
+
+/**
+ * Master switch for this checkout: the annotations plugin owns the selection
+ * toolbar (Copy / Add to chat / Ask in new chat / comments), so the plugin's
+ * own bar is off regardless of the stored preference.
+ */
+const SELECTION_BAR_ENABLED = false;
+
 export function useSelectionActions(tokens: ExtendedThemeTokens, enabled: boolean): void {
+  const barEnabled = enabled && SELECTION_BAR_ENABLED;
   useEffect(() => {
-    if (Platform.OS !== "web" || typeof document === "undefined" || !enabled) return;
+    if (Platform.OS !== "web" || typeof document === "undefined" || !barEnabled) return;
     const active = controller ?? (controller = startController());
     active.refs += 1;
     return () => {
@@ -399,10 +408,10 @@ export function useSelectionActions(tokens: ExtendedThemeTokens, enabled: boolea
       active.dispose();
       if (controller === active) controller = null;
     };
-  }, [enabled]);
+  }, [barEnabled]);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!barEnabled) return;
     controller?.bar.setTheme(tokens);
-  }, [tokens, enabled]);
+  }, [tokens, barEnabled]);
 }

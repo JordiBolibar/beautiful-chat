@@ -14,7 +14,20 @@ const LOCAL_FALLBACKS: Record<string, readonly string[]> = {
   "OMP Inter": ["Inter", "Segoe UI", "Roboto", "Helvetica Neue"],
 };
 /**
- * Installs the bundled Inter and Iosevka faces.
+ * Local alias for the host's default monospace stack — the same faces Paseo
+ * itself uses for code (its DEFAULT_MONO_FONT_STACK). `local()` cannot name a
+ * generic family, so the concrete faces stand in for `ui-monospace`.
+ */
+const SYSTEM_MONO_RULE = `@font-face {
+  font-family: "Paseo System Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  src: local("SFMono-Regular"), local("Menlo"), local("Monaco"), local("Consolas"), local("DejaVu Sans Mono"), local("Liberation Mono");
+}`;
+
+/**
+ * Installs the bundled Inter and Iosevka faces, plus the "Paseo System Mono"
+ * alias used for code surfaces.
  *
  * The plugin sandbox exposes no font loader, so on web and Electron the faces
  * are declared with `@font-face` against embedded woff2 data and the browser
@@ -41,7 +54,7 @@ export function embedFonts(): () => void {
   font-display: block;
   src: ${sources};
 }`;
-  }).join("\n");
+  }).join("\n") + "\n" + SYSTEM_MONO_RULE;
 
   const style = document.createElement("style");
   style.id = STYLE_ELEMENT_ID;

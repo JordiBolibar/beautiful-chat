@@ -115,6 +115,9 @@ function dialectFor(isDiff: boolean, language: string, filename?: string): strin
  */
 function diffTint(line: string | undefined, isDiff: boolean): "add" | "remove" | null {
   if (!isDiff || line === undefined) return null;
+  // Chrome lines (file headers, hunk headers, metadata) carry no tint, the
+  // way Claude Code leaves them plain next to red and green body rows.
+  if (isDiffChrome(line)) return null;
   if (line.startsWith("+")) return "add";
   if (line.startsWith("-")) return "remove";
   return null;
@@ -711,7 +714,7 @@ export function SyntaxHighlightBlock({
               {showLineNumbers && <Text style={styles.lineNumber}>{idx + 1}</Text>}
               <Text selectable style={styles.lineContent}>
                 {bodyLine
-                  ? renderDiffBodyLine(line, bodyLine, tokens)
+                  ? renderDiffBodyLine(bodyLine, tokens)
                   : shikiLine
                     ? renderShikiLine(shikiLine, tokens)
                     : renderSyntaxLine(
@@ -772,43 +775,12 @@ function renderShikiLine(line: HighlightLine, tokens: ExtendedThemeTokens): Reac
 }
 
 /**
- * The marker column of a diff row. Rendering it the same way on both paths is
- * what keeps the arriving tokens from shifting the code sideways. A marker that
- * is neither add nor remove is the context row's own space: it is text, not
- * chrome, so it keeps its width and takes the body colour.
+ * One diff body row: the code as the patched file's own grammar tokenised it.
+ * The row tint behind it carries the add/remove kind, so no marker glyph is
+ * drawn (Claude Code style); the body was tokenised without the marker.
  */
-function renderDiffMarker(marker: string, tokens: ExtendedThemeTokens): React.ReactNode {
-  if (marker !== "+" && marker !== "-") return marker;
-  return (
-    <Text
-      selectable
-      style={{
-        color: marker === "+" ? tokens.syntax.diffAddMarker : tokens.syntax.diffRemoveMarker,
-        fontWeight: "600",
-      }}
-    >
-      {marker}
-    </Text>
-  );
-}
-
-/**
- * One diff body row: its marker in the diff's colours, then the code as the
- * patched file's own grammar tokenised it. The diff grammar cannot do this —
- * it paints a row one colour from its marker — so the body was tokenised
- * separately, without the markers in the way.
- */
-function renderDiffBodyLine(
-  line: string,
-  body: HighlightLine,
-  tokens: ExtendedThemeTokens,
-): React.ReactNode {
-  return (
-    <>
-      {renderDiffMarker(line.slice(0, 1), tokens)}
-      {renderShikiLine(body, tokens)}
-    </>
-  );
+function renderDiffBodyLine(body: HighlightLine, tokens: ExtendedThemeTokens): React.ReactNode {
+  return renderShikiLine(body, tokens);
 }
 
 function renderSyntaxLine(
@@ -829,17 +801,12 @@ function renderSyntaxLine(
     }
 
     // The body of a diff line is real code, so it gets the same tokens as
-    // the file it came from. Only the marker carries the add/remove colour;
-    // the row behind it is already tinted.
-    const marker = line.startsWith("+") || line.startsWith("-") ? line.slice(0, 1) : "";
-    const body = marker ? line.slice(1) : line;
+    // the file it came from. The row tint carries the add/remove kind, so no
+    // marker glyph is drawn; the context row's leading space goes with it,
+    // which keeps every row's code flush with the next.
+    const body = isDiffChrome(line) ? line : line.slice(1);
 
-    return (
-      <>
-        {marker ? renderDiffMarker(marker, tokens) : null}
-        {renderDialectLine(body, lineDialect, tokens)}
-      </>
-    );
+    return renderDialectLine(body, lineDialect, tokens);
   }
 
   if (language === "bash") return renderBashTokens(line, tokens);

@@ -695,10 +695,12 @@ export function LiveReasoningRenderer({
 
   return (
     <View {...hostFontEscape}>
+      {/* Collapsed by default, streaming included: the rail still shows
+          progress, and the transcript is not pushed down by thinking text. */}
       <ReasoningTrace
         data={reasoningData}
         tokens={tokens}
-        defaultExpanded={data.phase === "streaming"}
+        defaultExpanded={false}
       />
     </View>
   );
