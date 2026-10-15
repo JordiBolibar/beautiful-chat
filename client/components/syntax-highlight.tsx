@@ -130,53 +130,6 @@ function fileExtension(filename?: string): string {
   return dot > 0 ? base.slice(dot + 1) : "";
 }
 
-/**
- * Extensions the daemon has a grammar for, minus the diff grammars themselves.
- *
- * The daemon resolves the grammar; this set only decides whether asking it is
- * worth a round trip. So an extension missing here costs one uncoloured diff,
- * never a wrong one.
- */
-const CODE_FILE_EXTENSIONS: Record<string, true> = {
-  ts: true,
-  mts: true,
-  cts: true,
-  tsx: true,
-  js: true,
-  mjs: true,
-  cjs: true,
-  jsx: true,
-  json: true,
-  jsonc: true,
-  sh: true,
-  bash: true,
-  zsh: true,
-  py: true,
-  pyi: true,
-  yaml: true,
-  yml: true,
-  md: true,
-  markdown: true,
-  rs: true,
-  go: true,
-  html: true,
-  htm: true,
-  css: true,
-  sql: true,
-  toml: true,
-  dockerfile: true,
-  ps1: true,
-  psm1: true,
-};
-
-/** Whether the patched file names a language the daemon can tokenise. */
-function patchedFileIsCode(filename?: string): boolean {
-  const base = (filename || "").toLowerCase().split(/[/\\]/).pop() || "";
-  if (base === "dockerfile" || base.startsWith("dockerfile.")) return true;
-  const ext = fileExtension(filename);
-  return ext !== "" && CODE_FILE_EXTENSIONS[ext] === true;
-}
-
 /** A unified hunk header, which no source file opens a line with. */
 const HUNK_HEADER_RE = /^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/;
 /** How far into a block a diff must announce itself before it reads as code. */
@@ -503,9 +456,13 @@ export function SyntaxHighlightBlock({
     [filename, language],
   );
   const lineDialects = useMemo(() => classifyLines(lines, codeLanguage), [lines, codeLanguage]);
+  // Every diff body is sent to the daemon with its markers stripped, whatever
+  // the file: the daemon resolves the grammar from the filename and degrades
+  // to plain text when it has none. Tokenising the raw patch instead is what
+  // let diff-grammar markers and their colours reach the rows.
   const diffBodyCode = useMemo(
-    () => (isDiff && patchedFileIsCode(filename) ? strippedDiffCode(lines) : undefined),
-    [isDiff, filename, lines],
+    () => (isDiff ? strippedDiffCode(lines) : undefined),
+    [isDiff, lines],
   );
   // Grammar-accurate colours arrive from the daemon one round trip late, and
   // never for a language it has no grammar for. Until then, and after a failed
