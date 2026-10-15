@@ -205,6 +205,8 @@ const EXTENSIONS: Record<string, string> = {
   css: "css",
   sql: "sql",
   toml: "toml",
+  jl: "julia",
+  julia: "julia",
   dockerfile: "docker",
   ps1: "powershell",
   psm1: "powershell",
@@ -269,6 +271,7 @@ async function buildEngine(): Promise<HighlightEngine> {
     import("@shikijs/langs/css"),
     import("@shikijs/langs/sql"),
     import("@shikijs/langs/toml"),
+    import("@shikijs/langs/julia"),
     import("@shikijs/langs/dockerfile"),
     import("@shikijs/langs/powershell"),
   ]);
