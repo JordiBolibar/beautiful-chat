@@ -97,6 +97,25 @@ export interface ExtendedThemeTokens {
     diffRemoveMarker: string;
     hunk: string;
   };
+
+  // Terminal surfaces (shell cards and command output), on the Catppuccin
+  // palette: Mocha on dark themes, Latte on light ones.
+  terminal: {
+    body: string;
+    prompt: string;
+    command: string;
+    subcommand: string;
+    operator: string;
+    flag: string;
+    string: string;
+    number: string;
+    path: string;
+    url: string;
+    comment: string;
+    success: string;
+    danger: string;
+    warning: string;
+  };
 }
 
 interface Rgba {
@@ -246,5 +265,43 @@ export function buildThemeTokens(
       diffRemoveMarker: danger,
       hunk: withAlpha(colors.foregroundMuted, 0.7),
     },
+
+    // Catppuccin (github.com/catppuccin/catppuccin), the popular pastel
+    // terminal palette: Mocha on dark, Latte on light. Shell output reads
+    // better with its wider, warmer range than the GitHub syntax set the
+    // code blocks keep.
+    terminal: isDark
+      ? {
+          body: "#bac2de", // subtext1
+          prompt: "#6c7086", // overlay0
+          command: "#cba6f7", // mauve
+          subcommand: "#f9e2af", // yellow
+          operator: "#f5c2e7", // pink
+          flag: "#89dceb", // sky
+          string: "#a6e3a1", // green
+          number: "#fab387", // peach
+          path: "#94e2d5", // teal
+          url: "#74c7ec", // sapphire
+          comment: "#7f849c", // overlay1
+          success: "#a6e3a1",
+          danger: "#f38ba8",
+          warning: "#f9e2af",
+        }
+      : {
+          body: "#5c5f77", // subtext1
+          prompt: "#9ca0b0", // overlay0
+          command: "#8839ef", // mauve
+          subcommand: "#df8e1d", // yellow
+          operator: "#ea76cb", // pink
+          flag: "#04a5e5", // sky
+          string: "#40a02b", // green
+          number: "#fe640b", // peach
+          path: "#179299", // teal
+          url: "#209fb5", // sapphire
+          comment: "#8c8fa1", // overlay1
+          success: "#40a02b",
+          danger: "#d20f39",
+          warning: "#df8e1d",
+        },
   };
 }

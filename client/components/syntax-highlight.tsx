@@ -970,7 +970,7 @@ const BASH_SUBCOMMANDS: Record<string, true> = {
 function renderBashTokens(line: string, tokens: ExtendedThemeTokens): React.ReactNode {
   if (line.startsWith("#")) {
     return (
-      <Text selectable style={{ color: tokens.syntax.comment }}>
+      <Text selectable style={{ color: tokens.terminal.comment }}>
         {line}
       </Text>
     );
@@ -1021,39 +1021,43 @@ function renderBashTokens(line: string, tokens: ExtendedThemeTokens): React.Reac
         <Text
           key={match.index}
           selectable
-          style={{ color: tokens.syntax.keyword, fontWeight: "600" }}
+          style={{ color: tokens.terminal.operator, fontWeight: "600" }}
         >
           {token}
         </Text>,
       );
     } else if (token.startsWith("-")) {
       parts.push(
-        <Text key={match.index} selectable style={{ color: tokens.syntax.property }}>
+        <Text key={match.index} selectable style={{ color: tokens.terminal.flag }}>
           {token}
         </Text>,
       );
     } else if (token.startsWith('"') || token.startsWith("'")) {
       parts.push(
-        <Text key={match.index} selectable style={{ color: tokens.syntax.string }}>
+        <Text key={match.index} selectable style={{ color: tokens.terminal.string }}>
           {token}
         </Text>,
       );
     } else if (/^\d+$/.test(token)) {
       parts.push(
-        <Text key={match.index} selectable style={{ color: tokens.syntax.number }}>
+        <Text key={match.index} selectable style={{ color: tokens.terminal.number }}>
           {token}
         </Text>,
       );
     } else if (isFirstWord || BASH_COMMANDS[token]) {
       isFirstWord = false;
       parts.push(
-        <Text key={match.index} selectable style={{ color: tokens.accent, fontWeight: "600" }}>
+        <Text
+          key={match.index}
+          selectable
+          style={{ color: tokens.terminal.command, fontWeight: "600" }}
+        >
           {token}
         </Text>,
       );
     } else if (BASH_SUBCOMMANDS[token]) {
       parts.push(
-        <Text key={match.index} selectable style={{ color: tokens.syntax.function }}>
+        <Text key={match.index} selectable style={{ color: tokens.terminal.subcommand }}>
           {token}
         </Text>,
       );
@@ -1070,7 +1074,7 @@ function renderBashTokens(line: string, tokens: ExtendedThemeTokens): React.Reac
   return (
     <>
       {promptPrefix ? (
-        <Text selectable style={{ color: tokens.foregroundSubtle, fontWeight: "600" }}>
+        <Text selectable style={{ color: tokens.terminal.prompt, fontWeight: "600" }}>
           {promptPrefix}
         </Text>
       ) : null}
@@ -1111,10 +1115,10 @@ export function renderTerminalOutput(text: string, tokens: ExtendedThemeTokens):
     if (verdict) {
       const tone =
         verdict.tone === "success"
-          ? tokens.success
+          ? tokens.terminal.success
           : verdict.tone === "danger"
-            ? tokens.danger
-            : tokens.warning;
+            ? tokens.terminal.danger
+            : tokens.terminal.warning;
       return (
         <Text key={key} selectable style={{ color: tone }}>
           {line}
@@ -1154,19 +1158,19 @@ export function renderTerminalOutput(text: string, tokens: ExtendedThemeTokens):
       let color = tokens.foreground;
 
       if (/^https?:\/\//.test(token)) {
-        color = tokens.accent;
+        color = tokens.terminal.url;
       } else if (token.startsWith('"') || token.startsWith("'")) {
-        color = tokens.syntax.string;
+        color = tokens.terminal.string;
       } else if (/^(?:PASS|OK|DONE|SUCCESS)$/i.test(token)) {
-        color = tokens.success;
+        color = tokens.terminal.success;
       } else if (/^(?:FAIL(?:ED)?|ERROR|FATAL)$/i.test(token)) {
-        color = tokens.danger;
+        color = tokens.terminal.danger;
       } else if (/^(?:WARN(?:ING)?|SKIPPED)$/i.test(token)) {
-        color = tokens.warning;
+        color = tokens.terminal.warning;
       } else if (/^\d/.test(token)) {
-        color = tokens.syntax.number;
+        color = tokens.terminal.number;
       } else {
-        color = tokens.syntax.property;
+        color = tokens.terminal.path;
       }
 
       parts.push(
@@ -1182,7 +1186,7 @@ export function renderTerminalOutput(text: string, tokens: ExtendedThemeTokens):
     }
 
     return (
-      <Text key={key} selectable style={{ color: tokens.foregroundMuted }}>
+      <Text key={key} selectable style={{ color: tokens.terminal.body }}>
         {parts}
         {lineIdx < lines.length - 1 ? "\n" : ""}
       </Text>
