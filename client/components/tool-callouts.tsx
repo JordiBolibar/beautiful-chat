@@ -18,6 +18,7 @@ import { ImagePreview } from "./image-preview";
 import { GitHubBody } from "./github-body";
 import { isImagePath, useImageFile } from "../image-file";
 import { useGroupModelSummary } from "../group-summary";
+import { workStory } from "../tool-kind";
 import type { ImageFile } from "../image-file";
 import { selectableSurface, unselectable } from "./selection";
 import { selectionCodeText, selectionSurface } from "./selection-actions";
@@ -43,6 +44,12 @@ interface ToolCalloutProps {
   data: ToolCalloutData;
   tokens: ExtendedThemeTokens;
   defaultExpanded?: boolean;
+  /**
+   * The plain-words line that replaces the raw command in the header,
+   * Claude Code style: the pill still names the tool, the line says what it
+   * did, and the command itself waits in the body.
+   */
+  story?: string;
   /** Shows a path in the machine's own file manager. */
   onRevealPath?: (path: string) => void;
   /**
@@ -57,6 +64,7 @@ export function ToolCallout({
   data,
   tokens,
   defaultExpanded = true,
+  story,
   onRevealPath,
   imageFile,
 }: ToolCalloutProps) {
@@ -490,7 +498,7 @@ export function ToolCallout({
             </Breathe>
           ) : null}
           <Text selectable style={styles.titleText} numberOfLines={1}>
-            {data.title}
+            {story ?? data.title}
           </Text>
         </View>
 
@@ -1120,47 +1128,6 @@ function useSubagentStyles(tokens: ExtendedThemeTokens): SubagentStyles {
  * calls, ...): a single minimized header that counts what ran, and the run's
  * own cards behind the chevron. The head's card is `members[0]`.
  */
-/**
- * Plain-words actions for known commands, the way Claude Code titles a tool
- * call: "ran tests", "checked git state". The plugin cannot know the run's
- * intent — only the model could write that — so this names the action type,
- * and a command the table does not recognize keeps its own text, shortened:
- * a wrong guess would say less than the command itself.
- */
-const COMMAND_STORIES: Array<[RegExp, string]> = [
-  [/^git (status|diff|log|show|branch|stash list|blame)/, "checked git state"],
-  [/^git (add|commit|push|pull|fetch|checkout|merge|rebase|stash|restore|reset|worktree)/, "changed git state"],
-  [/^(npm|pnpm|yarn|bun) (run )?(test|tests|check)/, "ran tests"],
-  [/^(npm|pnpm|yarn|bun) (run )?build/, "built the project"],
-  [/^julia .*test/, "ran Julia tests"],
-  [/^julia/, "ran Julia"],
-  [/^(grep|rg|ag|find|fd|fzf|which|whereis|tree|ack)\b/, "searched files"],
-  [/^(ls|dir|du|wc)\b/, "listed files"],
-  [/^(cat|less|more|head|tail)\b/, "read output"],
-  [/^(mkdir|touch|rm|cp|mv|chmod|chown|tar|zip|unzip)\b/, "changed files"],
-  [/^(echo|printf)\b/, "printed text"],
-  [/^(date|uptime|whoami|hostname|uname|free|df|ps|top|env|pwd|id)\b/, "checked system state"],
-  [/^paseo\b/, "ran Paseo commands"],
-];
-
-/** One member's action in plain words. */
-function workStory(data: ToolCalloutData): string {
-  if (data.tool === "read") {
-    const base = data.filePath ? data.filePath.split(/[/\\]/).pop() : undefined;
-    return base ? `read ${base}` : "read a file";
-  }
-  if (data.tool === "mcp") {
-    return data.mcp ? `called ${data.mcp.server}` : "made an MCP call";
-  }
-  if (data.tool === "eval") return "ran code";
-  if (data.tool === "paseo") return "managed agents";
-  const command = data.title.replace(/^\$ /, "");
-  for (const [pattern, story] of COMMAND_STORIES) {
-    if (pattern.test(command)) return story;
-  }
-  return command.length > 42 ? `${command.slice(0, 42)}…` : command;
-}
-
 /**
  * The one-line summary a collapsed group shows, Claude Code style: the run's
  * actions in plain words, repeats folded into a count ("checked system state

@@ -4,6 +4,7 @@ import type { ToolCalloutData } from "../shared/contracts";
 import { summarizeRunRpc } from "../shared/summary-rpc";
 import { useEnhancerPreferences } from "./preferences";
 import { isToolGroupClosed } from "./tool-groups";
+import { isCommandToolKind, workStory } from "./tool-kind";
 
 /**
  * The model-written line for a finished group of work calls.
@@ -30,6 +31,14 @@ const summaries = new Map<string, string>();
 const askedGroups = new Set<string>();
 const SUMMARY_LIMIT = 500;
 
+function rememberSummary(key: string, line: string): void {
+  summaries.set(key, line);
+  if (summaries.size > SUMMARY_LIMIT) {
+    const oldest = summaries.keys().next().value;
+    if (oldest !== undefined) summaries.delete(oldest);
+  }
+}
+
 export function useGroupModelSummary(
   groupId: string,
   members: ToolCalloutData[],
@@ -55,11 +64,7 @@ export function useGroupModelSummary(
     summarize({ actions })
       .then((result) => {
         if (!result.summary) return;
-        summaries.set(groupId, result.summary);
-        if (summaries.size > SUMMARY_LIMIT) {
-          const oldest = summaries.keys().next().value;
-          if (oldest !== undefined) summaries.delete(oldest);
-        }
+        rememberSummary(groupId, result.summary);
         setSummary(result.summary);
       })
       .catch(() => {
@@ -68,4 +73,43 @@ export function useGroupModelSummary(
   }, [groupId, members, summarize, preferences.modelGroupSummaries]);
 
   return summary;
+}
+
+/**
+ * The plain-words line for a single command card (bash, shell, git, unmapped):
+ * the rule table names the action at once, and once the call completes the
+ * same small model rewrites it in plain words. Non-command kinds answer
+ * `undefined` and keep their own title ("Read README.md" says it already).
+ */
+export function useSingleToolStory(
+  callId: string | undefined,
+  data: ToolCalloutData,
+): string | undefined {
+  const summarize = useRpc(summarizeRunRpc);
+  const preferences = useEnhancerPreferences();
+  const cacheKey = `single:${callId ?? data.title}`;
+  const [story, setStory] = useState<string | undefined>(() => summaries.get(cacheKey));
+  const asked = useRef(false);
+  const action = data.title.replace(/^\$ /, "");
+
+  useEffect(() => {
+    if (asked.current || askedGroups.has(cacheKey) || summaries.has(cacheKey)) return;
+    if (!preferences.modelGroupSummaries) return;
+    if (!isCommandToolKind(data.tool)) return;
+    if (data.status !== "completed") return;
+
+    asked.current = true;
+    askedGroups.add(cacheKey);
+    summarize({ actions: [action] })
+      .then((result) => {
+        if (!result.summary) return;
+        rememberSummary(cacheKey, result.summary);
+        setStory(result.summary);
+      })
+      .catch(() => {
+        // No line, no change: the rule-based line stays.
+      });
+  }, [cacheKey, action, data.tool, data.status, summarize, preferences.modelGroupSummaries]);
+
+  return story ?? (isCommandToolKind(data.tool) ? workStory(data) : undefined);
 }

@@ -19,6 +19,7 @@ import { NoticeCallout } from "./components/notice-callout";
 import { useEnhancerPreferences } from "./preferences";
 import { getAttachedToolGroupMembers, useToolGroupRow } from "./tool-groups";
 import { readToolCallFacts, toolKindFromFacts } from "./tool-kind";
+import { useSingleToolStory } from "./group-summary";
 import { buildHubData } from "./hub-details";
 import { publishHubSnapshot } from "./hub-activity";
 import { MarkdownView } from "./components/markdown/markdown-view";
@@ -718,12 +719,18 @@ export function LiveToolCallRenderer({
     }
   }
 
+  // A single command card shows its action in plain words instead of the raw
+  // command (Claude Code style); grouped members keep the raw command, because
+  // the group's header already speaks.
+  const singleStory = useSingleToolStory(data.callId, calloutData);
+
   return (
     <View {...hostFontEscapeDimmed}>
       <ToolCallout
         data={calloutData}
         tokens={tokens}
         defaultExpanded={isExpanded}
+        story={singleStory}
         onRevealPath={handleRevealPath}
         imageFile={imageFile}
       />
