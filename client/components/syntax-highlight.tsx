@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View, Text, Pressable, StyleSheet, Modal, ScrollView } from "react-native";
 import { Glyph } from "./glyph";
 import { frosted } from "./frosted";
 import { surfaceProps } from "./view-props";
@@ -19,6 +19,11 @@ interface SyntaxHighlightProps {
   showLineNumbers?: boolean;
   filename?: string;
   compact?: boolean;
+  /**
+   * The enlarged rendering the viewer modal shows: a step up in font size,
+   * and no expand button of its own — it is already the expanded form.
+   */
+  enlarged?: boolean;
   /** Shows the file in the machine's own file manager. Omitted: plain label. */
   onRevealFile?: () => void;
 }
@@ -426,9 +431,11 @@ export function SyntaxHighlightBlock({
   showLineNumbers = false,
   filename,
   compact = false,
+  enlarged = false,
   onRevealFile,
 }: SyntaxHighlightProps) {
   const [copied, setCopied] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const handleCopy = useCallback(() => {
     if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
@@ -566,7 +573,7 @@ export function SyntaxHighlightBlock({
         },
         lineNumber: {
           width: 32,
-          fontSize: 12,
+          fontSize: enlarged ? 14 : 12,
           fontFamily: tokens.fontMono,
           color: tokens.foregroundSubtle,
           textAlign: "right",
@@ -575,18 +582,38 @@ export function SyntaxHighlightBlock({
         },
         lineContent: {
           flex: 1,
-          fontSize: 12,
-          lineHeight: 18,
+          fontSize: enlarged ? 14 : 12,
+          lineHeight: enlarged ? 21 : 18,
           fontFamily: tokens.fontCode,
           color: tokens.foreground,
         },
+        viewerOverlay: {
+          flex: 1,
+          backgroundColor: "rgba(0, 0, 0, 0.6)",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 32,
+        },
+        viewerFrame: {
+          width: "100%",
+          maxWidth: 1200,
+          maxHeight: "100%",
+        },
+        viewerClose: {
+          position: "absolute",
+          top: 10,
+          right: 10,
+          padding: 4,
+          zIndex: 1,
+        },
       }),
-    [tokens, compact, copied],
+    [tokens, compact, copied, enlarged],
   );
 
   return (
     // No pointer glow here: a code block is an inner surface, and lighting it
     // separately from the card that holds it reads as two hovers at once.
+    <>
     <View {...surfaceProps(frosted, selectionSurface)} style={styles.container}>
       {(filename || language) && (
         <View style={styles.header}>
@@ -619,6 +646,16 @@ export function SyntaxHighlightBlock({
               </Text>
             ) : null}
           </View>
+          {!enlarged ? (
+            <Pressable
+              onPress={() => setExpanded(true)}
+              style={styles.copyButton}
+              accessibilityRole="button"
+            >
+              <Glyph name="Maximize2" size={12} color={tokens.foregroundMuted} />
+              <Text style={styles.copyText}>Expand</Text>
+            </Pressable>
+          ) : null}
           <Pressable onPress={handleCopy} style={styles.copyButton}>
             <Pop trigger={copied}>
               <Glyph
@@ -687,6 +724,43 @@ export function SyntaxHighlightBlock({
         })}
       </View>
     </View>
+    {expanded && !enlarged ? (
+      <Modal
+        transparent
+        visible
+        animationType="fade"
+        onRequestClose={() => setExpanded(false)}
+      >
+        <Pressable style={styles.viewerOverlay} onPress={() => setExpanded(false)}>
+          {/* The enlarged block, at the window's width rather than the chat
+              column's, and a step larger in font size. A press inside the
+              frame must not close the viewer, so this inner Pressable
+              swallows it; the X and Escape stay the deliberate ways out. */}
+          <Pressable onPress={() => {}} style={styles.viewerFrame}>
+            <Pressable
+              onPress={() => setExpanded(false)}
+              style={styles.viewerClose}
+              accessibilityRole="button"
+            >
+              <Glyph name="X" size={16} color={tokens.foregroundMuted} />
+            </Pressable>
+            <ScrollView style={{ width: "100%", maxHeight: "100%" }}>
+              <SyntaxHighlightBlock
+                code={code}
+                language={language}
+                tokens={tokens}
+                showLineNumbers
+                filename={filename}
+                compact={false}
+                enlarged
+                onRevealFile={onRevealFile}
+              />
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    ) : null}
+    </>
   );
 }
 

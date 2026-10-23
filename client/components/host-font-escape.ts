@@ -24,3 +24,21 @@ import type { ViewProps } from "react-native";
 export const hostFontEscape = {
   dataSet: { pmono: true },
 } as unknown as ViewProps;
+
+/**
+ * How far the work surfaces sit under the prose: the rows between the
+ * agent's words, and the code blocks inside a reply. One constant so the
+ * levels stay in sync.
+ */
+export const WORK_ROW_OPACITY = 0.8;
+
+/**
+ * The same escape, for the work rows that sit between the agent's words.
+ * A slight dim so the assistant's prose keeps the highest contrast in the
+ * stream and the summary messages stand out at a glance. The reply and the
+ * user's own turn render at full opacity.
+ */
+export const hostFontEscapeDimmed = {
+  dataSet: { pmono: true },
+  style: { opacity: WORK_ROW_OPACITY },
+} as unknown as ViewProps;

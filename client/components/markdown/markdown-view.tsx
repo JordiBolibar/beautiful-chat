@@ -5,6 +5,7 @@ import { Glyph } from "../glyph";
 import { radius, withAlpha, type ExtendedThemeTokens } from "../theme-tokens";
 import { selectableSurface, unselectable } from "../selection";
 import { selectionSurface } from "../selection-actions";
+import { WORK_ROW_OPACITY } from "../host-font-escape";
 import { SyntaxHighlightBlock } from "../syntax-highlight";
 import { openLink } from "../open-link";
 import { parseMarkdown, type MdAlign, type MdBlock, type MdInline, type MdListItem } from "./parse";
@@ -669,6 +670,9 @@ function buildStyles(tokens: ExtendedThemeTokens, variant: MarkdownVariant): Mar
     },
     codeBlock: {
       marginVertical: 1,
+      // Code inside a reply is work surface, not prose: it sits at the same
+      // dim level as the tool cards so the sentences carry the contrast.
+      opacity: WORK_ROW_OPACITY,
     },
     rule: {
       height: 1,
