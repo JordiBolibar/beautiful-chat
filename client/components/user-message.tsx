@@ -73,7 +73,7 @@ function UsageFigure({
 }
 
 /**
- * The user's turn. It sits to the right on light paper with dark text and no
+ * The user's turn. It sits to the left on light paper with dark text and no
  * accent: colour on this surface marks agent activity, so keeping it off the
  * prompt is what separates what the user wrote from what the agent did.
  * The body text stays left-aligned inside the block, because right-ragged
@@ -103,16 +103,18 @@ export function UserMessage({
     () =>
       StyleSheet.create({
         container: {
-          alignSelf: "flex-end",
+          // Left-anchored: the reading flow stays on one side, like the rest
+          // of the stream.
+          alignSelf: "flex-start",
           maxWidth: "82%",
           flexDirection: "row",
           gap: 10,
           paddingVertical: 8,
-          paddingLeft: 12,
-          paddingRight: 10,
+          paddingLeft: 10,
+          paddingRight: 12,
           borderRadius: radius.card,
           // The square tail marks the turn's owner, matching the native stream.
-          borderTopRightRadius: radius.chip,
+          borderTopLeftRadius: radius.chip,
           backgroundColor: tokens.userSurface,
           borderWidth: 1,
           borderColor: tokens.userBorder,
@@ -123,7 +125,7 @@ export function UserMessage({
         metaRow: {
           flexDirection: "row",
           alignItems: "center",
-          justifyContent: "flex-end",
+          justifyContent: "flex-start",
           gap: 8,
         },
         label: {
@@ -164,7 +166,7 @@ export function UserMessage({
         usageRow: {
           flexDirection: "row",
           alignItems: "center",
-          justifyContent: "flex-end",
+          justifyContent: "flex-start",
           flexWrap: "wrap",
           gap: 10,
           marginTop: 7,

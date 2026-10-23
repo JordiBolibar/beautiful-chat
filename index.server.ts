@@ -1,8 +1,11 @@
 import { spawn } from "node:child_process";
-import { open, stat, type FileHandle } from "node:fs/promises";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { mkdir, open, readFile, stat, writeFile, type FileHandle } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { revealPathRpc } from "./shared/file-rpc";
+import { summarizeRunRpc } from "./shared/summary-rpc";
 import { type HighlightLine, type HighlightToken, highlightRpc } from "./shared/highlight-rpc";
 import { imageRpc } from "./shared/image-rpc";
 
@@ -449,7 +452,145 @@ function tokenize(
   }
 }
 
+/**
+ * Group summaries come from a small Mistral model: only a model can say what
+ * a run was for, not just what it typed. The lightest model that writes a
+ * clean line is enough — change the constant to trade cost for polish.
+ * Answers are cached on disk, keyed by the run's items, so a finished group
+ * asks once and keeps its line across restarts.
+ */
+const SUMMARY_MODEL = "mistral-small-latest";
+const SUMMARY_TIMEOUT_MS = 15_000;
+const SUMMARY_CACHE_PATH = join(
+  homedir(),
+  ".paseo",
+  "plugin-data",
+  "beautiful-chat",
+  "summaries.json",
+);
+const SUMMARY_CACHE_LIMIT = 500;
+
+const SUMMARY_SYSTEM_PROMPT = [
+  "You write one-line labels for batches of developer tool activity in a coding chat.",
+  "You get a numbered list of shell commands and file reads.",
+  "Reply with ONE line, at most 10 words, plain English, present tense,",
+  "saying what the batch accomplished overall.",
+  "No quotes, no bullet points, no trailing punctuation. Reply with the line only.",
+].join(" ");
+
+let summaryCache: Record<string, string> | null = null;
+
+async function loadSummaryCache(): Promise<Record<string, string>> {
+  if (summaryCache !== null) return summaryCache;
+  try {
+    const raw = await readFile(SUMMARY_CACHE_PATH, "utf8");
+    const parsed = JSON.parse(raw) as Record<string, string>;
+    summaryCache = parsed;
+  } catch {
+    summaryCache = {};
+  }
+  return summaryCache;
+}
+
+async function saveSummaryCache(cache: Record<string, string>): Promise<void> {
+  try {
+    await mkdir(dirname(SUMMARY_CACHE_PATH), { recursive: true });
+    await writeFile(SUMMARY_CACHE_PATH, JSON.stringify(cache));
+  } catch {
+    // A read-only home keeps the call working; it only loses the cache.
+  }
+}
+
+/**
+ * Writes go through one chain, so two groups finishing at once cannot tear
+ * the file by interleaving their writes.
+ */
+let summaryCacheWrite: Promise<void> = Promise.resolve();
+
+function persistSummaryCache(cache: Record<string, string>): Promise<void> {
+  summaryCacheWrite = summaryCacheWrite.then(() => saveSummaryCache(cache));
+  return summaryCacheWrite;
+}
+
+function summarizeHandler(input: { actions: string[] }): Promise<{
+  summary: string | null;
+  error: string | null;
+}> {
+  return (async () => {
+    const apiKey = process.env.MISTRAL_API_KEY;
+    if (!apiKey) return { summary: null, error: "No MISTRAL_API_KEY" };
+    if (typeof globalThis.fetch !== "function") {
+      return { summary: null, error: "No fetch" };
+    }
+
+    const key = createHash("sha256").update(JSON.stringify(input.actions)).digest("hex");
+    const cache = await loadSummaryCache();
+    const hit = cache[key];
+    if (typeof hit === "string") {
+      // Re-insert so eviction drops the least recently used run, not the
+      // oldest finished one.
+      delete cache[key];
+      cache[key] = hit;
+      return { summary: hit, error: null };
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), SUMMARY_TIMEOUT_MS);
+    try {
+      const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: SUMMARY_MODEL,
+          temperature: 0,
+          max_tokens: 48,
+          messages: [
+            { role: "system", content: SUMMARY_SYSTEM_PROMPT },
+            {
+              role: "user",
+              content: input.actions.map((action, index) => `${index + 1}. ${action}`).join("\n"),
+            },
+          ],
+        }),
+        signal: controller.signal,
+      });
+      if (!response.ok) return { summary: null, error: `HTTP ${response.status}` };
+
+      const payload = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      const text = payload.choices?.[0]?.message?.content?.trim() ?? "";
+      // The model is told to answer with one bare line; anything else (a
+      // refusal, a list, an empty choice) keeps the heuristic card instead of
+      // putting prose where a label belongs.
+      const line = text
+        .split("\n")[0]
+        ?.replace(/^["'`]+|["'`]+$/g, "")
+        .trim()
+        .slice(0, 120);
+      if (!line) return { summary: null, error: "Empty answer" };
+
+      cache[key] = line;
+      const keys = Object.keys(cache);
+      if (keys.length > SUMMARY_CACHE_LIMIT) {
+        for (const old of keys.slice(0, keys.length - SUMMARY_CACHE_LIMIT)) delete cache[old];
+      }
+      await persistSummaryCache(cache);
+      return { summary: line, error: null };
+    } catch (error) {
+      return { summary: null, error: error instanceof Error ? error.message : String(error) };
+    } finally {
+      clearTimeout(timer);
+    }
+  })();
+}
+
 export default function contribute(server: PluginServerContext) {
+  server.handle(summarizeRunRpc, summarizeHandler);
+
   server.handle(revealPathRpc, async (input) => {
     const requested = stripSelector(input.path);
     if (!requested) return { revealed: null, error: "No path" };

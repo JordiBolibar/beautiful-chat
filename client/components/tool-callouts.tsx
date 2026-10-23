@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import type { TextStyle, ViewStyle } from "react-native";
 import { Glyph } from "./glyph";
@@ -16,7 +16,8 @@ import { SyntaxHighlightBlock, renderTerminalOutput } from "./syntax-highlight";
 import { FileTypeLogo } from "./file-type-logo";
 import { ImagePreview } from "./image-preview";
 import { GitHubBody } from "./github-body";
-import { isImagePath } from "../image-file";
+import { isImagePath, useImageFile } from "../image-file";
+import { useGroupModelSummary } from "../group-summary";
 import type { ImageFile } from "../image-file";
 import { selectableSurface, unselectable } from "./selection";
 import { selectionCodeText, selectionSurface } from "./selection-actions";
@@ -60,6 +61,16 @@ export function ToolCallout({
   imageFile,
 }: ToolCalloutProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
+  const [touched, setTouched] = useState(false);
+
+  // A card opens while its call runs so the output can be watched, and closes
+  // itself when the call completes — a finished command with a wall of
+  // output is exactly what the fold is for. A fold the reader touched by
+  // hand is never yanked back: their choice outlives the run.
+  useEffect(() => {
+    if (data.status !== "completed" || touched) return;
+    setExpanded(false);
+  }, [data.status, touched]);
 
   // Every branch below needs a payload. A tool that carries none — a hub op
   // with no parsed record, an unmapped kind — would otherwise draw an empty
@@ -448,7 +459,13 @@ export function ToolCallout({
       {...surfaceProps(frosted, glowing(tokens.isDark), selectionSurface)}
       style={styles.container}
     >
-      <Pressable onPress={() => setExpanded((p) => !p)} style={styles.header}>
+      <Pressable
+        onPress={() => {
+          setTouched(true);
+          setExpanded((p) => !p);
+        }}
+        style={styles.header}
+      >
         <View style={styles.headerLeft}>
           <Breathe depth={1.08} durationMs={1800}>
             <Glyph name={getToolIconName(data.tool)} size={13} color={iconColor} />
@@ -1095,5 +1112,307 @@ function useSubagentStyles(tokens: ExtendedThemeTokens): SubagentStyles {
         },
       }),
     [tokens],
+  );
+}
+
+/**
+ * One card for a run of consecutive work tool calls (commands, reads, MCP
+ * calls, ...): a single minimized header that counts what ran, and the run's
+ * own cards behind the chevron. The head's card is `members[0]`.
+ */
+/**
+ * Plain-words actions for known commands, the way Claude Code titles a tool
+ * call: "ran tests", "checked git state". The plugin cannot know the run's
+ * intent — only the model could write that — so this names the action type,
+ * and a command the table does not recognize keeps its own text, shortened:
+ * a wrong guess would say less than the command itself.
+ */
+const COMMAND_STORIES: Array<[RegExp, string]> = [
+  [/^git (status|diff|log|show|branch|stash list|blame)/, "checked git state"],
+  [/^git (add|commit|push|pull|fetch|checkout|merge|rebase|stash|restore|reset|worktree)/, "changed git state"],
+  [/^(npm|pnpm|yarn|bun) (run )?(test|tests|check)/, "ran tests"],
+  [/^(npm|pnpm|yarn|bun) (run )?build/, "built the project"],
+  [/^julia .*test/, "ran Julia tests"],
+  [/^julia/, "ran Julia"],
+  [/^(grep|rg|ag|find|fd|fzf|which|whereis|tree|ack)\b/, "searched files"],
+  [/^(ls|dir|du|wc)\b/, "listed files"],
+  [/^(cat|less|more|head|tail)\b/, "read output"],
+  [/^(mkdir|touch|rm|cp|mv|chmod|chown|tar|zip|unzip)\b/, "changed files"],
+  [/^(echo|printf)\b/, "printed text"],
+  [/^(date|uptime|whoami|hostname|uname|free|df|ps|top|env|pwd|id)\b/, "checked system state"],
+  [/^paseo\b/, "ran Paseo commands"],
+];
+
+/** One member's action in plain words. */
+function workStory(data: ToolCalloutData): string {
+  if (data.tool === "read") {
+    const base = data.filePath ? data.filePath.split(/[/\\]/).pop() : undefined;
+    return base ? `read ${base}` : "read a file";
+  }
+  if (data.tool === "mcp") {
+    return data.mcp ? `called ${data.mcp.server}` : "made an MCP call";
+  }
+  if (data.tool === "eval") return "ran code";
+  if (data.tool === "paseo") return "managed agents";
+  const command = data.title.replace(/^\$ /, "");
+  for (const [pattern, story] of COMMAND_STORIES) {
+    if (pattern.test(command)) return story;
+  }
+  return command.length > 42 ? `${command.slice(0, 42)}…` : command;
+}
+
+/**
+ * The one-line summary a collapsed group shows, Claude Code style: the run's
+ * actions in plain words, repeats folded into a count ("checked system state
+ * ×2"), then "+ N more" when there are too many to name.
+ */
+function groupSummary(members: ToolCalloutData[]): string {
+  const phrases: Array<{ story: string; count: number }> = [];
+  for (const member of members) {
+    const story = workStory(member);
+    const last = phrases[phrases.length - 1];
+    if (last && last.story === story) last.count++;
+    else phrases.push({ story, count: 1 });
+  }
+  const lead = phrases
+    .slice(0, 3)
+    .map((phrase) => (phrase.count > 1 ? `${phrase.story} ×${phrase.count}` : phrase.story));
+  const extra = phrases.length - lead.length;
+  const joined = lead.join(", ");
+  return extra > 0 ? `${joined} +${extra} more` : joined;
+}
+
+/** A member card inside an expanded group; each one keeps its own fold. */
+function GroupedMemberCard({
+  data,
+  tokens,
+  cwd,
+  onRevealPath,
+}: {
+  data: ToolCalloutData;
+  tokens: ExtendedThemeTokens;
+  cwd?: string | null;
+  onRevealPath?: (path: string) => void;
+}) {
+  // Only a read or write of an image asks the daemon for bytes; the hook
+  // itself refuses every other path, so a code read costs no RPC.
+  const imageFile = useImageFile(
+    data.tool === "read" || data.tool === "write" ? data.filePath : undefined,
+    cwd ?? null,
+  );
+  return (
+    <ToolCallout
+      data={data}
+      tokens={tokens}
+      defaultExpanded={data.status === "running" || data.status === "failed"}
+      onRevealPath={onRevealPath}
+      imageFile={imageFile}
+    />
+  );
+}
+
+export interface ToolGroupMemberCard {
+  /** The call's id: two identical commands in one run must not share a key. */
+  callId: string;
+  data: ToolCalloutData;
+}
+
+export interface ToolGroupCardProps {
+  /** The group's id: what the model summary is cached under. */
+  groupId: string;
+  /** The run's cards, head first. */
+  members: ToolGroupMemberCard[];
+  tokens: ExtendedThemeTokens;
+  cwd?: string | null;
+  /** Shows a path in the machine's own file manager. */
+  onRevealPath?: (path: string) => void;
+}
+
+export function ToolGroupCard({ groupId, members, tokens, cwd, onRevealPath }: ToolGroupCardProps) {
+  const [expanded, setExpanded] = useState(false);
+  const [touched, setTouched] = useState(false);
+
+  const cards = members.map((member) => member.data);
+  // The heuristic line paints at once; the model line replaces it when the
+  // daemon answers. A failure keeps the heuristic, never an empty header.
+  const modelSummary = useGroupModelSummary(groupId, cards);
+  const summary = modelSummary ?? groupSummary(cards);
+
+  const anyRunning = cards.some((card) => card.status === "running");
+  const failedCount = cards.filter((card) => card.status === "failed").length;
+  const totalMs = cards.reduce((sum, card) => sum + (card.durationMs ?? 0), 0);
+
+  // A failure is the one thing worth seeing unasked: the group opens for it
+  // once, and never re-opens a group the reader closed on purpose.
+  useEffect(() => {
+    if (failedCount > 0 && !touched) setExpanded(true);
+  }, [failedCount, touched]);
+
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        container: {
+          marginVertical: 4,
+          borderRadius: radius.card,
+          backgroundColor: tokens.surfaceGlass,
+          borderWidth: 1,
+          borderColor: tokens.borderSubtle,
+          ...tokens.boxShadow,
+          overflow: "hidden",
+          ...selectableSurface,
+        },
+        header: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingHorizontal: 10,
+          paddingVertical: 6,
+          backgroundColor: tokens.surface1,
+        },
+        headerLeft: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 8,
+          flex: 1,
+        },
+        statusDot: {
+          width: 7,
+          height: 7,
+          borderRadius: 4,
+        },
+        titleText: {
+          fontFamily: tokens.fontUi,
+          fontSize: 12,
+          fontWeight: "400",
+          color: tokens.foreground,
+          flexShrink: 1,
+        },
+        headerRight: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 6,
+        },
+        durationBadge: {
+          fontSize: 11,
+          fontFamily: tokens.fontUi,
+          color: tokens.foregroundSubtle,
+        },
+        countChip: {
+          paddingHorizontal: 6,
+          paddingVertical: 2,
+          borderRadius: radius.chip,
+          backgroundColor: tokens.surface2,
+        },
+        countChipText: {
+          fontSize: 10,
+          fontFamily: tokens.fontUi,
+          fontWeight: "600",
+          color: tokens.foregroundSubtle,
+        },
+        body: {
+          padding: 12,
+          backgroundColor: tokens.surface0,
+          borderTopWidth: 1,
+          borderTopColor: tokens.borderSubtle,
+        },
+        memberList: {
+          gap: 8,
+        },
+      }),
+    [tokens],
+  );
+
+  return (
+    <View
+      {...surfaceProps(frosted, glowing(tokens.isDark), selectionSurface)}
+      style={styles.container}
+    >
+      <Pressable
+        onPress={() => {
+          setTouched(true);
+          setExpanded((previous) => !previous);
+        }}
+        style={styles.header}
+      >
+        <View style={styles.headerLeft}>
+          {/* Claude Code's collapsed-row look: a filled status dot carries the
+            state, and one regular-weight line says what the run did. */}
+          <View
+            style={[
+              styles.statusDot,
+              {
+                backgroundColor:
+                  failedCount > 0
+                    ? tokens.danger
+                    : anyRunning
+                      ? tokens.accent
+                      : tokens.success,
+              },
+            ]}
+          />
+          <Text selectable style={styles.titleText} numberOfLines={1}>
+            {summary}
+          </Text>
+        </View>
+
+        <View style={styles.headerRight}>
+          {/* How many cards sit behind the fold. The summary names the lead
+            items; this counts the whole run. */}
+          <View style={styles.countChip}>
+            <Text selectable style={styles.countChipText}>
+              ×{members.length}
+            </Text>
+          </View>
+
+          {totalMs > 0 ? (
+            <Text selectable style={styles.durationBadge}>
+              {totalMs}ms
+            </Text>
+          ) : null}
+
+          {failedCount > 0 && (
+            <Text selectable style={{ fontSize: 11, fontWeight: "600", color: tokens.danger }}>
+              {failedCount === 1 ? "1 failed" : `${failedCount} failed`}
+            </Text>
+          )}
+
+          {anyRunning && (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+              <PulseDot color={tokens.accent} size={5} />
+              <Text
+                selectable
+                style={{
+                  fontSize: 11,
+                  color: tokens.accent,
+                  fontWeight: "500",
+                }}
+              >
+                running
+              </Text>
+            </View>
+          )}
+
+          <Rotate active={expanded}>
+            <Breathe depth={1.08} durationMs={1800}>
+              <Glyph name="ChevronDown" size={16} color={tokens.foregroundMuted} />
+            </Breathe>
+          </Rotate>
+        </View>
+      </Pressable>
+
+      {expanded && (
+        <View style={[styles.body, styles.memberList]}>
+          {members.map((member) => (
+            <GroupedMemberCard
+              key={member.callId}
+              data={member.data}
+              tokens={tokens}
+              cwd={cwd}
+              onRevealPath={onRevealPath}
+            />
+          ))}
+        </View>
+      )}
+    </View>
   );
 }

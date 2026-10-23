@@ -30,6 +30,18 @@ nothing says so rather than showing an empty panel.
 
 ![Shell and Git tool calls](docs/images/tool-bash.png)
 
+### Grouped work calls
+
+Consecutive work calls (shell, git, reads, MCP, eval, Paseo agent tools) fold into one minimized
+card: a status dot, a one-line summary of the run, the grouped-call count, and the total
+duration. The line is written twice: a rule table names the action at once ("ran tests",
+"checked git state"), and once the run closes, a small Mistral model rewrites it in plain words
+through the plugin's daemon-side RPC (`summarize.run`), cached on disk so a finished group asks
+once. The model line needs `MISTRAL_API_KEY` in the daemon's environment; without it, or with
+its setting off, the rule-based line stays and nothing leaves the machine. Reasoning, file
+edits, asks, tasks, hub and GitHub cards stay standalone. A failed call marks the header and
+opens the group once.
+
 ### Read
 
 The file's own language logo, a wrapped path, line numbers, and a copy button. The path is a link:
@@ -126,8 +138,8 @@ actions the host owns.
 
 ### Prompt bubble
 
-The authored turn on a raised theme surface with a square tail, a copy button, and the turn's token
-usage.
+The authored turn, left-anchored on a raised theme surface with a square tail on its top-left
+corner, a copy button, and the turn's token usage.
 
 ![Prompt bubble](docs/images/user.png)
 
@@ -152,6 +164,8 @@ Devicon brand marks, and the file-manager link.
 | Frosted glass          | Blur card surfaces, or paint them solid.                           |
 | Enhanced prompt bubble | Off hands prompts back to Paseo, whose bubble shows pasted images. |
 | Assistant markdown     | Off hands replies back to Paseo's own markdown renderer.           |
+| Group work tool calls  | Fold consecutive work calls into one minimized card.               |
+| Model-written summaries | Ask a small Mistral model for the group card's one-line label. The run's command lines leave the machine for that call. |
 
 ---
 
@@ -261,14 +275,18 @@ timestamp, item}`, and plugin navigation offers only `openSettings`, `openSurfac
 beautiful-chat/
   paseo-plugin.json          # Manifest: id and Paseo requirement
   index.client.tsx           # Timeline transformers, renderers, settings screen
-  index.server.ts            # Daemon-side RPCs (file.reveal)
+  index.server.ts            # Daemon-side RPCs (file.reveal, summarize.run)
   shared/
     contracts.ts             # Data contracts shared by client and server
     file-rpc.ts              # file.reveal contract
+    summary-rpc.ts           # summarize.run contract (model-written group lines)
   client/
     live-renderers.tsx       # Timeline item to component mapping
     settings-page.tsx        # Settings screen
     preferences.ts           # Client-side presentation preferences
+    tool-groups.ts           # Grouping store for consecutive work calls
+    tool-kind.ts             # Shared tool-call classifier
+    group-summary.ts         # Model-written group summary hook
     components/              # Cards, syntax block, glyphs, motion, theme tokens
       mark-bitmaps.ts        # GENERATED PNG rasters of every brand mark
       devicon-data.ts        # Vendor SVG sources, read only by the generator

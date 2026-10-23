@@ -45,6 +45,20 @@ export interface EnhancerPreferences {
    * subset rather than a superset.
    */
   assistantMarkdown: boolean;
+  /**
+   * Fold consecutive work tool calls (commands, reads, MCP calls, ...) into
+   * one minimized card, like the host's own grouping. Reasoning, file edits,
+   * asks, tasks and hub calls keep their standalone cards. Like
+   * `assistantMarkdown`, the preference is read at transform time, so it
+   * applies to new items; cached items keep their shape until a reload.
+   */
+  groupWorkCalls: boolean;
+  /**
+   * The model-written one-liner for a finished group. The daemon sends the
+   * run's command lines to the Mistral API to ask for it, so turning this
+   * off keeps grouped commands on the machine; the rule-based line stays.
+   */
+  modelGroupSummaries: boolean;
   /** Which look the markdown renderer uses. */
   markdownVariant: MarkdownVariantPreference;
 }
@@ -60,6 +74,8 @@ export const DEFAULT_PREFERENCES: Readonly<EnhancerPreferences> = {
   enhancedUserBubble: true,
   selectionActions: true,
   assistantMarkdown: true,
+  groupWorkCalls: true,
+  modelGroupSummaries: true,
   markdownVariant: "document",
 };
 
@@ -103,6 +119,14 @@ function loadPreferences(): EnhancerPreferences {
         typeof candidate.assistantMarkdown === "boolean"
           ? candidate.assistantMarkdown
           : DEFAULT_PREFERENCES.assistantMarkdown,
+      groupWorkCalls:
+        typeof candidate.groupWorkCalls === "boolean"
+          ? candidate.groupWorkCalls
+          : DEFAULT_PREFERENCES.groupWorkCalls,
+      modelGroupSummaries:
+        typeof candidate.modelGroupSummaries === "boolean"
+          ? candidate.modelGroupSummaries
+          : DEFAULT_PREFERENCES.modelGroupSummaries,
       markdownVariant:
         candidate.markdownVariant === "compact" || candidate.markdownVariant === "terminal"
           ? candidate.markdownVariant

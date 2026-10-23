@@ -353,6 +353,22 @@ export function BeautifulChatSettingsPage({ theme }: PluginSurfaceProps) {
           tokens={tokens}
         />
 
+        <ToggleRow
+          title="Group work tool calls"
+          description="Folds consecutive commands, reads and MCP calls into one minimized card, like Paseo's own grouping. Reasoning, file edits, asks, tasks and hub cards stay standalone. New items follow the change."
+          value={preferences.groupWorkCalls}
+          onChange={(groupWorkCalls) => updateEnhancerPreferences({ groupWorkCalls })}
+          tokens={tokens}
+        />
+
+        <ToggleRow
+          title="Model-written group summaries"
+          description="Asks a small Mistral model for the one-line label on a finished group card. The run's command lines leave the machine for that call and are cached on disk afterwards. Off keeps the rule-based line, which never leaves the machine."
+          value={preferences.modelGroupSummaries}
+          onChange={(modelGroupSummaries) => updateEnhancerPreferences({ modelGroupSummaries })}
+          tokens={tokens}
+        />
+
         <ChoiceRow
           title="Markdown style"
           description="Document is airy and built for long answers. Compact tightens the spacing for short replies. Terminal sets the body in the code face."

@@ -5,11 +5,11 @@ import { useRevealedText } from "@getpaseo/plugin/client/react-native";
 import type { PluginTimelineItemProps } from "@getpaseo/plugin/client";
 import type { PluginTheme } from "@getpaseo/plugin";
 import { buildThemeTokens } from "./components/theme-tokens";
-import { ToolCallout } from "./components/tool-callouts";
+import { ToolCallout, ToolGroupCard } from "./components/tool-callouts";
 import { ReasoningTrace } from "./components/reasoning-trace";
 import { TaskList } from "./components/task-list";
 import { UserMessage } from "./components/user-message";
-import { hostFontEscape } from "./components/host-font-escape";
+import { hostFontEscape, hostFontEscapeDimmed } from "./components/host-font-escape";
 import { promptRowAnchor } from "./components/prompt-anchor";
 import { surfaceProps } from "./components/view-props";
 import { useSelectionActions } from "./components/selection-actions";
@@ -17,6 +17,8 @@ import { usePointerGlow } from "./components/glow";
 import type { TurnUsage } from "./components/user-message";
 import { NoticeCallout } from "./components/notice-callout";
 import { useEnhancerPreferences } from "./preferences";
+import { getAttachedToolGroupMembers, useToolGroupRow } from "./tool-groups";
+import { readToolCallFacts, toolKindFromFacts } from "./tool-kind";
 import { buildHubData } from "./hub-details";
 import { publishHubSnapshot } from "./hub-activity";
 import { MarkdownView } from "./components/markdown/markdown-view";
@@ -53,6 +55,11 @@ export interface LiveToolCallPayload {
   status: string;
   detail?: Record<string, unknown>;
   callId?: string;
+  /** Set when the call folds into a group of consecutive work calls. */
+  group?: {
+    id: string;
+    role: "head" | "member";
+  };
   error?: string | null;
   phase?: string;
 }
@@ -384,6 +391,205 @@ export function languageFromPath(filePath?: string): string | undefined {
   return LANGUAGE_BY_EXTENSION[ext];
 }
 
+/**
+ * A unified-diff hunk rebuilt from an edit's replacement pair. History the
+ * daemon re-serves after a session load arrives without the precomputed
+ * unified diff, but the pair still rides along in the tool detail or in the
+ * tool's input JSON, so the card keeps a colored diff instead of an empty
+ * body. No context lines: the file body around the replacement is not part
+ * of the payload.
+ */
+function buildReplacementDiff(
+  detail: Record<string, unknown>,
+  input: Record<string, unknown>,
+): string | undefined {
+  const pick = (obj: Record<string, unknown>, keys: string[]): string | undefined => {
+    for (const key of keys) {
+      const value = obj[key];
+      if (typeof value === "string") return value;
+    }
+    return undefined;
+  };
+  const oldText =
+    pick(detail, ["oldString", "oldText", "old_string"]) ??
+    pick(input, ["oldString", "oldText", "old_string"]);
+  const newText =
+    pick(detail, ["newString", "newText", "new_string"]) ??
+    pick(input, ["newString", "newText", "new_string"]);
+  if (oldText === undefined && newText === undefined) return undefined;
+  const rows: string[] = [
+    `@@ -1,${(oldText ?? "").split("\n").length} +1,${(newText ?? "").split("\n").length} @@`,
+  ];
+  if (oldText !== undefined) {
+    for (const line of oldText.split("\n")) rows.push(`-${line}`);
+  }
+  if (newText !== undefined) {
+    for (const line of newText.split("\n")) rows.push(`+${line}`);
+  }
+  return rows.join("\n");
+}
+
+/**
+ * The card payload a tool call renders. A pure function, because a group card
+ * builds the same payload for each of its members. The tool kind comes from
+ * the one classifier the transformer also uses (`tool-kind.ts`); an unmapped
+ * tool keeps the "bash" card with its own name as the title, as it always did.
+ */
+export function buildToolCalloutData(data: LiveToolCallPayload): ToolCalloutData {
+  const rawName = (data.name || "").toLowerCase();
+  const detail = (data.detail && typeof data.detail === "object" ? data.detail : {}) as Record<
+    string,
+    unknown
+  >;
+  const facts = readToolCallFacts(detail);
+  const { input, filePath, command } = facts;
+  const output = detail.output ?? detail.result ?? detail.content ?? "";
+
+  // Universal code / file content extraction
+  const code: string | undefined =
+    (typeof detail.content === "string" ? detail.content : undefined) ||
+    (typeof output === "string" ? output : undefined) ||
+    (typeof input.content === "string" ? input.content : undefined);
+
+  // Universal diff extraction
+  const diff: string | undefined =
+    (typeof detail.unifiedDiff === "string" ? detail.unifiedDiff : undefined) ||
+    (typeof detail.diff === "string" ? detail.diff : undefined) ||
+    extractStringProp(output, "diff") ||
+    // History replayed from a loaded session carries the replacement pair
+    // instead of the precomputed diff; rebuild a hunk from it.
+    buildReplacementDiff(detail, input);
+
+  // A tool that answers with content blocks carries its prose in
+  // `content[0].text`. That text is allowed to be empty — a `hub wait` job
+  // snapshot puts everything in `details` and nothing in the text — so there
+  // is deliberately no stringify fallback here: a card renders from its typed
+  // record instead. Stringifying the envelope is what printed raw JSON.
+  const outputText: string | undefined =
+    typeof output === "string"
+      ? output
+      : extractStringProp(output, "stdout") ||
+        extractStringProp(output, "text") ||
+        (output && typeof output === "object"
+          ? extractContentText(output as Record<string, unknown>)
+          : undefined);
+  const durationMs =
+    typeof detail.durationMs === "number" ? detail.durationMs : extractEvalDuration(output);
+  const mappedKind = toolKindFromFacts(rawName, facts);
+  const toolKind: ToolCallKind = mappedKind ?? "bash";
+  let hub: HubData | undefined;
+  let mcp: McpToolData | undefined;
+  let subagent: ToolCalloutData["subagent"];
+  let paseo: PaseoToolData | undefined;
+  let github: GitHubToolData | undefined;
+  let evalCells: EvalCell[] = [];
+  let askOptions: AskOption[] = [];
+  let askAnswer: string[] = [];
+  let title = data.name || "tool";
+
+  switch (mappedKind) {
+    case "github": {
+      // A device call is a write: `content` is the request, and the tool's own
+      // result text is the reply. They are read separately here because the
+      // generic `code` extraction prefers whichever it finds first, which drew
+      // the request twice and the answer never.
+      const request = asString(input.content) ?? asString(detail.content);
+      const reply = outputText && outputText !== request ? outputText : undefined;
+      github = buildGitHubData(request, reply);
+      title = github
+        ? [github.op, github.repo, github.subject].filter(Boolean).join(" ")
+        : "GitHub";
+      break;
+    }
+    case "git":
+      title = command ? `$ ${command.trim().slice(0, 55)}` : "Git command";
+      break;
+    case "read":
+      title = filePath ? `Read ${filePath.split(/[/\\]/).pop() || filePath}` : "Read file";
+      break;
+    case "write":
+      title = filePath ? `Write ${filePath.split(/[/\\]/).pop() || filePath}` : "Write file";
+      break;
+    case "edit":
+      title = filePath ? `Edit ${filePath.split(/[/\\]/).pop() || filePath}` : "Edit file";
+      break;
+    case "bash":
+    case "shell":
+      title = command ? `$ ${command.trim().slice(0, 55)}` : "Execute command";
+      break;
+    case "thinking":
+      title = "Reasoning Process";
+      break;
+    case "paseo":
+      title = `Paseo: ${rawName}`;
+      paseo = buildPaseoData(rawName, input, outputText, durationMs);
+      break;
+    case "mcp":
+      title = rawName.replace(/^mcp__/, "").replace(/__/g, " / ");
+      mcp = buildMcpData(rawName, input, output, durationMs);
+      break;
+    case "ask": {
+      const asked = extractAskQuestion(input);
+      title = asked?.question || "User Decision";
+      askOptions = asked?.options ?? [];
+      askAnswer = extractAskSelections(output, outputText);
+      break;
+    }
+    case "hub":
+      title = `Hub: ${String(input.op || "operation")}`;
+      hub = buildHubData(input, outputText, output);
+      break;
+    case "eval": {
+      evalCells = extractEvalCells(detail, input, output);
+      const cellTitle = evalCells.find((cell) => cell.title)?.title;
+      title = cellTitle ? `Eval: ${cellTitle}` : "Eval Kernel";
+      break;
+    }
+    case "task": {
+      subagent = buildSubagentBatch(input);
+      const count = subagent?.agents.length ?? 0;
+      title =
+        count === 1 ? (subagent?.agents[0]?.name ?? "Subagent") : `${count || "No"} subagents`;
+      break;
+    }
+  }
+
+  const exitCodeCandidate =
+    typeof detail.exitCode === "number"
+      ? detail.exitCode
+      : typeof detail.code === "number"
+        ? detail.code
+        : undefined;
+
+  return {
+    id: `live-${rawName}`,
+    tool: toolKind,
+    title,
+    status:
+      data.status === "running" ? "running" : data.status === "failed" ? "failed" : "completed",
+    filePath,
+    language:
+      toolKind === "bash" || toolKind === "shell" || toolKind === "git"
+        ? "bash"
+        : languageFromPath(filePath),
+    // A github card reads its typed record; leaving `code` and `output` set
+    // would draw the request and the reply a second time.
+    code: toolKind === "github" ? undefined : code,
+    diff,
+    output: toolKind === "github" || evalCells.length > 0 ? undefined : outputText,
+    cells: evalCells.length > 0 ? evalCells : undefined,
+    askOptions: askOptions.length > 0 ? askOptions : undefined,
+    askAnswer: askAnswer.length > 0 ? askAnswer : undefined,
+    exitCode: exitCodeCandidate,
+    durationMs,
+    hub,
+    subagent,
+    mcp,
+    paseo,
+    github,
+  };
+}
+
 export function LiveToolCallRenderer({
   agentId,
   item,
@@ -402,186 +608,21 @@ export function LiveToolCallRenderer({
   usePointerGlow(preferences.pointerGlow);
   const data = item.data;
 
-  const calloutData = useMemo((): ToolCalloutData => {
-    const rawName = (data.name || "").toLowerCase();
-    const detail = (data.detail && typeof data.detail === "object" ? data.detail : {}) as Record<
-      string,
-      unknown
-    >;
-    const detailType = typeof detail.type === "string" ? detail.type.toLowerCase() : "";
-    const input = (
-      detail.input && typeof detail.input === "object"
-        ? detail.input
-        : detail.arguments && typeof detail.arguments === "object"
-          ? detail.arguments
-          : detail.args && typeof detail.args === "object"
-            ? detail.args
-            : {}
-    ) as Record<string, unknown>;
-    const output = detail.output ?? detail.result ?? detail.content ?? "";
+  const calloutData = useMemo(() => buildToolCalloutData(data), [data]);
 
-    // Universal path extraction across OMP, Paseo, Claude, and Codex formats
-    const filePath: string | undefined =
-      (typeof detail.filePath === "string" ? detail.filePath : undefined) ||
-      (typeof input.path === "string" ? input.path : undefined) ||
-      (typeof input.filePath === "string" ? input.filePath : undefined) ||
-      (typeof detail.path === "string" ? detail.path : undefined);
-
-    // Universal command extraction
-    const command: string | undefined =
-      (typeof detail.command === "string" ? detail.command : undefined) ||
-      (typeof input.command === "string" ? input.command : undefined) ||
-      (typeof detail.input === "string" ? detail.input : undefined);
-
-    // Universal code / file content extraction
-    const code: string | undefined =
-      (typeof detail.content === "string" ? detail.content : undefined) ||
-      (typeof output === "string" ? output : undefined) ||
-      (typeof input.content === "string" ? input.content : undefined);
-
-    // Universal diff extraction
-    const diff: string | undefined =
-      (typeof detail.unifiedDiff === "string" ? detail.unifiedDiff : undefined) ||
-      (typeof detail.diff === "string" ? detail.diff : undefined) ||
-      extractStringProp(output, "diff");
-
-    // A tool that answers with content blocks carries its prose in
-    // `content[0].text`. That text is allowed to be empty — a `hub wait` job
-    // snapshot puts everything in `details` and nothing in the text — so there
-    // is deliberately no stringify fallback here: a card renders from its typed
-    // record instead. Stringifying the envelope is what printed raw JSON.
-    const outputText: string | undefined =
-      typeof output === "string"
-        ? output
-        : extractStringProp(output, "stdout") ||
-          extractStringProp(output, "text") ||
-          (output && typeof output === "object"
-            ? extractContentText(output as Record<string, unknown>)
-            : undefined);
-    const durationMs =
-      typeof detail.durationMs === "number" ? detail.durationMs : extractEvalDuration(output);
-    let toolKind: ToolCallKind = "bash";
-    let hub: HubData | undefined;
-    let mcp: McpToolData | undefined;
-    let subagent: ToolCalloutData["subagent"];
-    let paseo: PaseoToolData | undefined;
-    let github: GitHubToolData | undefined;
-    let evalCells: EvalCell[] = [];
-    let askOptions: AskOption[] = [];
-    let askAnswer: string[] = [];
-    let title = data.name || "tool";
-
-    const isGitHubTool =
-      rawName === "github" ||
-      detailType === "github" ||
-      filePath === "xd://github" ||
-      filePath?.startsWith("xd://github/") === true;
-    const isGitCommand =
-      rawName === "git" || detailType === "git" || /^\s*git(?:\.exe)?(?:\s|$)/i.test(command ?? "");
-
-    if (isGitHubTool) {
-      toolKind = "github";
-      // A device call is a write: `content` is the request, and the tool's own
-      // result text is the reply. They are read separately here because the
-      // generic `code` extraction prefers whichever it finds first, which drew
-      // the request twice and the answer never.
-      const request = asString(input.content) ?? asString(detail.content);
-      const reply = outputText && outputText !== request ? outputText : undefined;
-      github = buildGitHubData(request, reply);
-      title = github
-        ? [github.op, github.repo, github.subject].filter(Boolean).join(" ")
-        : "GitHub";
-    } else if (isGitCommand) {
-      toolKind = "git";
-      title = command ? `$ ${command.trim().slice(0, 55)}` : "Git command";
-    } else if (rawName === "read" || detailType === "read") {
-      toolKind = "read";
-      title = filePath ? `Read ${filePath.split(/[/\\]/).pop() || filePath}` : "Read file";
-    } else if (rawName === "write" || detailType === "write") {
-      toolKind = "write";
-      title = filePath ? `Write ${filePath.split(/[/\\]/).pop() || filePath}` : "Write file";
-    } else if (rawName === "edit" || detailType === "edit") {
-      toolKind = "edit";
-      title = filePath ? `Edit ${filePath.split(/[/\\]/).pop() || filePath}` : "Edit file";
-    } else if (rawName === "bash" || rawName === "shell" || detailType === "shell") {
-      toolKind = rawName === "shell" || detailType === "shell" ? "shell" : "bash";
-      title = command ? `$ ${command.trim().slice(0, 55)}` : "Execute command";
-    } else if (rawName === "thinking") {
-      toolKind = "thinking";
-      title = "Reasoning Process";
-    } else if (
-      rawName === "create_agent" ||
-      rawName === "list_providers" ||
-      rawName === "list_models" ||
-      rawName === "get_agent_activity" ||
-      rawName === "send_agent_prompt" ||
-      rawName === "get_agent_status"
-    ) {
-      toolKind = "paseo";
-      title = `Paseo: ${rawName}`;
-      paseo = buildPaseoData(rawName, input, outputText, durationMs);
-    } else if (rawName.startsWith("mcp__") || rawName === "mcp") {
-      toolKind = "mcp";
-      title = rawName.replace(/^mcp__/, "").replace(/__/g, " / ");
-      mcp = buildMcpData(rawName, input, output, durationMs);
-    } else if (rawName === "ask") {
-      toolKind = "ask";
-      const asked = extractAskQuestion(input);
-      title = asked?.question || "User Decision";
-      askOptions = asked?.options ?? [];
-      askAnswer = extractAskSelections(output, outputText);
-    } else if (rawName === "hub") {
-      toolKind = "hub";
-      title = `Hub: ${String(input.op || "operation")}`;
-      hub = buildHubData(input, outputText, output);
-    } else if (rawName === "eval") {
-      toolKind = "eval";
-      evalCells = extractEvalCells(detail, input, output);
-      const cellTitle = evalCells.find((cell) => cell.title)?.title;
-      title = cellTitle ? `Eval: ${cellTitle}` : "Eval Kernel";
-    } else if (rawName === "task") {
-      toolKind = "task";
-      subagent = buildSubagentBatch(input);
-      const count = subagent?.agents.length ?? 0;
-      title =
-        count === 1 ? (subagent?.agents[0]?.name ?? "Subagent") : `${count || "No"} subagents`;
-    }
-
-    const exitCodeCandidate =
-      typeof detail.exitCode === "number"
-        ? detail.exitCode
-        : typeof detail.code === "number"
-          ? detail.code
-          : undefined;
-
-    return {
-      id: `live-${rawName}`,
-      tool: toolKind,
-      title,
-      status:
-        data.status === "running" ? "running" : data.status === "failed" ? "failed" : "completed",
-      filePath,
-      language:
-        toolKind === "bash" || toolKind === "shell" || toolKind === "git"
-          ? "bash"
-          : languageFromPath(filePath),
-      // A github card reads its typed record; leaving `code` and `output` set
-      // would draw the request and the reply a second time.
-      code: toolKind === "github" ? undefined : code,
-      diff,
-      output: toolKind === "github" || evalCells.length > 0 ? undefined : outputText,
-      cells: evalCells.length > 0 ? evalCells : undefined,
-      askOptions: askOptions.length > 0 ? askOptions : undefined,
-      askAnswer: askAnswer.length > 0 ? askAnswer : undefined,
-      exitCode: exitCodeCandidate,
-      durationMs,
-      hub,
-      subagent,
-      mcp,
-      paseo,
-      github,
-    };
-  }, [data]);
+  // Group wiring. Every grouped row reports its agent and timestamp from here
+  // (the transform sees neither), so the store can validate membership: a
+  // "member" from an older history page, or from another agent streaming
+  // through the same module store, detaches and draws its own card.
+  const group = data.group;
+  const atMs = timestamp.getTime();
+  const attached = useToolGroupRow(
+    group?.id,
+    data.callId,
+    agentId,
+    atMs,
+    group?.role === "head",
+  );
 
   // The dock has no access to the job manager, so the timeline is its only
   // source: every job snapshot that passes through a card is republished, and
@@ -608,15 +649,77 @@ export function LiveToolCallRenderer({
     [cwd, revealPath],
   );
 
+  // A member confirmed in its group is drawn by the head's GroupedMemberCard,
+  // which loads the image itself — loading it here too would cost a second
+  // RPC for the same read.
+  const foldedMember = group?.role === "member" && attached;
+
   // Only a read or write of an image asks the daemon for bytes; the hook
   // itself refuses every other path, so a code read costs no RPC.
   const imageFile = useImageFile(
-    calloutData.tool === "read" || calloutData.tool === "write" ? calloutData.filePath : undefined,
+    !foldedMember && (calloutData.tool === "read" || calloutData.tool === "write")
+      ? calloutData.filePath
+      : undefined,
     cwd,
   );
 
+  // A member confirmed in its group draws nothing here: the head's card
+  // carries it. The tail note stays, because a member can be the newest row on
+  // screen and the running-jobs card anchors to whatever is last.
+  if (foldedMember) {
+    return (
+      <View {...hostFontEscapeDimmed}>
+        <TimelineTailHub
+          agentId={agentId}
+          tokens={tokens}
+          itemKey={`tool:${data.callId ?? calloutData.title}:${atMs}`}
+          at={atMs}
+          kind="tool"
+        />
+      </View>
+    );
+  }
+
+  // A head with two or more confirmed members draws one card for the whole
+  // run. A single call keeps the plain card: it already collapses, and its
+  // own title says more than a count would.
+  if (group?.role === "head") {
+    const members = getAttachedToolGroupMembers(group.id);
+    if (members.length >= 2) {
+      const memberCards = members.map((member) => ({
+        callId: member.callId,
+        data: buildToolCalloutData({
+          name: member.payload.name,
+          status: member.payload.status,
+          detail: member.payload.detail,
+          error: member.payload.error,
+          phase: member.payload.phase,
+        }),
+      }));
+      return (
+        <View {...hostFontEscapeDimmed}>
+          <ToolGroupCard
+            key={group.id}
+            groupId={group.id}
+            members={memberCards}
+            tokens={tokens}
+            cwd={cwd}
+            onRevealPath={handleRevealPath}
+          />
+          <TimelineTailHub
+            agentId={agentId}
+            tokens={tokens}
+            itemKey={`tool:${data.callId ?? calloutData.title}:${atMs}`}
+            at={atMs}
+            kind="tool"
+          />
+        </View>
+      );
+    }
+  }
+
   return (
-    <View {...hostFontEscape}>
+    <View {...hostFontEscapeDimmed}>
       <ToolCallout
         data={calloutData}
         tokens={tokens}
@@ -694,7 +797,7 @@ export function LiveReasoningRenderer({
   }, [data, revealed]);
 
   return (
-    <View {...hostFontEscape}>
+    <View {...hostFontEscapeDimmed}>
       {/* Collapsed by default, streaming included: the rail still shows
           progress, and the transcript is not pushed down by thinking text. */}
       <ReasoningTrace
@@ -737,7 +840,7 @@ export function LiveTodoRenderer({ item, theme }: PluginTimelineItemProps<LiveTo
   }, [data]);
 
   return (
-    <View {...hostFontEscape}>
+    <View {...hostFontEscapeDimmed}>
       <TaskList data={taskListData} tokens={tokens} />
     </View>
   );
@@ -827,7 +930,7 @@ export function LiveNoticeRenderer({ item, theme }: PluginTimelineItemProps<Live
   );
 
   return (
-    <View {...hostFontEscape}>
+    <View {...hostFontEscapeDimmed}>
       <NoticeCallout data={noticeData} tokens={tokens} />
     </View>
   );

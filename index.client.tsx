@@ -9,6 +9,8 @@ import { installHostNoticeStyle } from "./client/components/host-notice";
 import { installChatFind } from "./client/components/chat-find";
 import { extractPromptImages } from "./client/prompt-images";
 import { getEnhancerPreferences } from "./client/preferences";
+import { closeToolGroup, noteGroupedToolCall } from "./client/tool-groups";
+import { isGroupableToolKind, readToolCallFacts, toolKindFromFacts } from "./client/tool-kind";
 import {
   LiveToolCallRenderer,
   LiveReasoningRenderer,
@@ -50,6 +52,32 @@ export default function contribute(client: PluginClientContext) {
     query: { itemType: "tool_call" },
     transform({ item, phase }) {
       if (item.type !== "tool_call") return undefined;
+      const detail = toJsonValue(item.detail) as Record<string, unknown>;
+      // Grouping: consecutive work calls (shell, reads, MCP, ...) fold into one
+      // card. The kind is decided by the one classifier the renderer also uses.
+      // Roles are memoized per call id: the item's content changes while it
+      // streams, so this transform re-runs, and only the payload may refresh.
+      // The preference is read here, like `assistantMarkdown`: it applies to
+      // new items, and cached items keep their shape until a reload.
+      const kind = toolKindFromFacts(item.name.toLowerCase(), readToolCallFacts(detail)) ?? "bash";
+      let group: { id: string; role: "head" | "member" } | undefined;
+      if (!getEnhancerPreferences().groupWorkCalls || !isGroupableToolKind(kind)) {
+        // A standalone card is its own boundary: the next work call opens a
+        // fresh group. `hub` stays standalone on purpose; its card's effect is
+        // the only source of the running-jobs dock.
+        closeToolGroup();
+      } else if (item.callId) {
+        const assignment = noteGroupedToolCall(item.callId, {
+          name: item.name,
+          status: item.status,
+          detail,
+          error: item.error ? String(item.error) : null,
+          phase,
+        });
+        group = { id: assignment.groupId, role: assignment.role };
+      } else {
+        closeToolGroup();
+      }
       return {
         items: [
           {
@@ -59,8 +87,9 @@ export default function contribute(client: PluginClientContext) {
             data: {
               name: item.name,
               status: item.status,
-              detail: toJsonValue(item.detail),
+              detail: toJsonValue(detail),
               ...(item.callId ? { callId: item.callId } : {}),
+              ...(group ? { group } : {}),
               error: item.error ? String(item.error) : null,
               phase,
             },
@@ -78,6 +107,12 @@ export default function contribute(client: PluginClientContext) {
       status: z.string(),
       detail: z.record(z.string(), z.unknown()).optional(),
       callId: z.string().optional(),
+      group: z
+        .object({
+          id: z.string(),
+          role: z.enum(["head", "member"]),
+        })
+        .optional(),
       error: z.string().nullable().optional(),
       phase: z.string().optional(),
     }),
@@ -89,6 +124,8 @@ export default function contribute(client: PluginClientContext) {
     query: { itemType: "reasoning" },
     transform({ item, phase }) {
       if (item.type !== "reasoning") return undefined;
+      // Any card that is not a work tool call ends the current group.
+      closeToolGroup();
       return {
         items: [
           {
@@ -120,6 +157,7 @@ export default function contribute(client: PluginClientContext) {
     query: { itemType: "todo" },
     transform({ item, phase }) {
       if (item.type !== "todo") return undefined;
+      closeToolGroup();
       return {
         items: [
           {
@@ -151,6 +189,9 @@ export default function contribute(client: PluginClientContext) {
     query: { itemType: "user_message" },
     transform({ item }) {
       if (item.type !== "user_message") return undefined;
+      // The boundary closes the group even when the bubble itself is left to
+      // the host: what breaks a run is the turn, not who draws it.
+      closeToolGroup();
       // The host strips images while mapping the stream item, so an enhanced
       // bubble would silently swallow a pasted screenshot. The preference lets
       // the reader trade the bubble for the host's image previews.
@@ -198,6 +239,7 @@ export default function contribute(client: PluginClientContext) {
     query: { itemType: "assistant_message" },
     transform({ item }) {
       if (item.type !== "assistant_message") return undefined;
+      closeToolGroup();
       if (!getEnhancerPreferences().assistantMarkdown) return undefined;
       if (!item.text.trim()) return undefined;
       return {
@@ -233,6 +275,7 @@ export default function contribute(client: PluginClientContext) {
     query: { itemType: "error" },
     transform({ item }) {
       if (item.type !== "error") return undefined;
+      closeToolGroup();
       return {
         items: [
           {
@@ -257,6 +300,18 @@ export default function contribute(client: PluginClientContext) {
     Component: LiveNoticeRenderer,
   });
 
+  // A compaction row is on the transformer-accepted list (unlike
+  // `notification`), so it can serve as a group boundary. Returning undefined
+  // leaves the row to the host; only the boundary matters here.
+  const removeCompactionTransformer = client.addTimelineTransformer({
+    id: "omp-compaction-boundary",
+    query: { itemType: "compaction" },
+    transform() {
+      closeToolGroup();
+      return undefined;
+    },
+  });
+
   return () => {
     removeFonts();
     removeFrost();
@@ -276,5 +331,6 @@ export default function contribute(client: PluginClientContext) {
     removeAssistantRenderer();
     removeErrorTransformer();
     removeNoticeRenderer();
+    removeCompactionTransformer();
   };
 }
