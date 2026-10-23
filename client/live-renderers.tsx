@@ -664,6 +664,12 @@ export function LiveToolCallRenderer({
     cwd,
   );
 
+  // A single command card shows its action in plain words instead of the raw
+  // command (Claude Code style); grouped members keep the raw command, because
+  // the group's header already speaks. Like every hook here, it runs before
+  // the early returns: a row that folds must not change its hook count.
+  const singleStory = useSingleToolStory(data.callId, calloutData);
+
   // A member confirmed in its group draws nothing here: the head's card
   // carries it. The tail note stays, because a member can be the newest row on
   // screen and the running-jobs card anchors to whatever is last.
@@ -718,11 +724,6 @@ export function LiveToolCallRenderer({
       );
     }
   }
-
-  // A single command card shows its action in plain words instead of the raw
-  // command (Claude Code style); grouped members keep the raw command, because
-  // the group's header already speaks.
-  const singleStory = useSingleToolStory(data.callId, calloutData);
 
   return (
     <View {...hostFontEscapeDimmed}>
