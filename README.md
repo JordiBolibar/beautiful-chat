@@ -42,6 +42,13 @@ its setting off, the rule-based line stays and nothing leaves the machine. Reaso
 edits, asks, tasks, hub and GitHub cards stay standalone. A failed call marks the header and
 opens the group once.
 
+### Small cards
+
+A finished card folds by default. Turn "Auto-expand small cards" on — the composer pill next
+to the chat input, or the settings page — and a small body stays open instead: a shell call
+with five or fewer output lines, an edit with five or fewer diff lines. Cards inside a group
+are not affected, and a card folded by hand stays folded.
+
 ### Read
 
 The file's own language logo, a wrapped path, line numbers, and a copy button. The path is a link:
@@ -166,6 +173,7 @@ Devicon brand marks, and the file-manager link.
 | Assistant markdown     | Off hands replies back to Paseo's own markdown renderer.           |
 | Group work tool calls  | Fold consecutive work calls into one minimized card.               |
 | Model-written summaries | Ask a small Mistral model for the group card's one-line label. The run's command lines leave the machine for that call. |
+| Auto-expand small cards | Keep small shell and edit cards open when the call completes.       |
 
 ---
 

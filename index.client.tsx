@@ -1,4 +1,4 @@
-import type { PluginClientContext } from "@getpaseo/plugin/client";
+import type { PluginClientContext, PluginButtonRegistration } from "@getpaseo/plugin/client";
 import { z } from "zod";
 import { BeautifulChatSettingsPage } from "./client/settings-page";
 import { embedFonts } from "./client/components/embed-fonts";
@@ -8,7 +8,11 @@ import { installPointerGlow } from "./client/components/glow";
 import { installHostNoticeStyle } from "./client/components/host-notice";
 import { installChatFind } from "./client/components/chat-find";
 import { extractPromptImages } from "./client/prompt-images";
-import { getEnhancerPreferences } from "./client/preferences";
+import {
+  getEnhancerPreferences,
+  subscribeEnhancerPreferences,
+  updateEnhancerPreferences,
+} from "./client/preferences";
 import { closeToolGroup, noteGroupedToolCall } from "./client/tool-groups";
 import { isGroupableToolKind, readToolCallFacts, toolKindFromFacts } from "./client/tool-kind";
 import {
@@ -45,6 +49,81 @@ export default function contribute(client: PluginClientContext) {
     icon: "Blocks",
     Component: BeautifulChatSettingsPage,
   });
+
+  // The auto-expand switch, one press away next to the chat input. One pill
+  // per agent chat: the pill follows the agent list, so a chat that opens
+  // later gets its pill too, and an archived chat loses it. The label
+  // carries the state; the title is the long name for accessibility. A
+  // daemon that cannot answer the agent list leaves the settings toggle as
+  // the other way in, which always works.
+  const pills = new Map<string, PluginButtonRegistration>();
+  let pillsDisposed = false;
+  const autoExpandTitle = () =>
+    `Auto-expand small cards: ${getEnhancerPreferences().autoExpandSmallCards ? "ON" : "OFF"}`;
+  const autoExpandLabel = () =>
+    `Auto-expand: ${getEnhancerPreferences().autoExpandSmallCards ? "ON" : "OFF"}`;
+  const toggleAutoExpand = () => {
+    updateEnhancerPreferences({
+      autoExpandSmallCards: !getEnhancerPreferences().autoExpandSmallCards,
+    });
+  };
+  const syncPills = () => {
+    for (const pill of pills.values()) {
+      pill.update({ title: autoExpandTitle(), label: autoExpandLabel() });
+    }
+  };
+  // The fields the pill decision reads, so both the list entry and the
+  // update event feed the same function.
+  interface PillAgentSource {
+    id: string;
+    workspaceId?: string | null;
+    archivedAt?: string | null;
+  }
+  const upsertPill = (agent: PillAgentSource) => {
+    const existing = pills.get(agent.id);
+    // An archived chat keeps its history but needs no input-side switch, and
+    // an agent outside a workspace has no composer to pin the pill to.
+    if (!agent.workspaceId || agent.archivedAt) {
+      existing?.remove();
+      pills.delete(agent.id);
+      return;
+    }
+    if (existing) return;
+    pills.set(
+      agent.id,
+      client.addComposerPill({
+        id: `auto-expand-small-cards-${agent.id}`,
+        workspaceId: agent.workspaceId,
+        agentId: agent.id,
+        button: {
+          title: autoExpandTitle(),
+          label: autoExpandLabel(),
+          icon: "UnfoldVertical",
+          behavior: { kind: "action", onPress: toggleAutoExpand },
+        },
+      }),
+    );
+  };
+  const removeAgentSubscription = client.paseo.agents.subscribe((update) => {
+    if (update.kind === "remove") {
+      pills.get(update.agentId)?.remove();
+      pills.delete(update.agentId);
+    } else {
+      upsertPill(update.agent);
+    }
+  });
+  void client.paseo.agents
+    .list()
+    .then((agents) => {
+      if (pillsDisposed) return;
+      for (const entry of agents.entries) upsertPill(entry.agent);
+    })
+    .catch(() => {
+      // The settings toggle remains the other way in.
+    });
+  // The settings page and the pill must not drift apart: every preference
+  // change repaints the labels.
+  const removePreferenceSync = subscribeEnhancerPreferences(syncPills);
 
   // Live chat timeline interception: render real tool calls, reasoning, and todos with enhanced UI.
   const removeToolTransformer = client.addTimelineTransformer({
@@ -313,6 +392,10 @@ export default function contribute(client: PluginClientContext) {
   });
 
   return () => {
+    pillsDisposed = true;
+    removeAgentSubscription();
+    removePreferenceSync();
+    for (const pill of pills.values()) pill.remove();
     removeFonts();
     removeFrost();
     removeShimmer();

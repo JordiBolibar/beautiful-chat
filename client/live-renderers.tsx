@@ -17,6 +17,7 @@ import { usePointerGlow } from "./components/glow";
 import type { TurnUsage } from "./components/user-message";
 import { NoticeCallout } from "./components/notice-callout";
 import { useEnhancerPreferences } from "./preferences";
+import { isSmallCardBody } from "./card-size";
 import { getAttachedToolGroupMembers, useToolGroupRow } from "./tool-groups";
 import { readToolCallFacts, toolKindFromFacts } from "./tool-kind";
 import { useSingleToolStory } from "./group-summary";
@@ -638,7 +639,10 @@ export function LiveToolCallRenderer({
     });
   }, [hubData, agentId]);
 
-  // Collapse completed tools by default; expand active or failed tools
+  // Collapse completed tools by default; expand active or failed tools. A
+  // completed body the reader can take in at a glance — few output lines on
+  // a shell card, few diff lines on an edit — stays open when the
+  // auto-expand preference is on.
   const isExpanded = data.status === "running" || data.status === "failed";
 
   // The daemon side owns the shell, so revealing a file is one RPC. A path the
@@ -654,6 +658,16 @@ export function LiveToolCallRenderer({
   // which loads the image itself — loading it here too would cost a second
   // RPC for the same read.
   const foldedMember = group?.role === "member" && attached;
+
+  // The small-body exception to the fold above. A grouped member never
+  // reaches the card below, so it never asks; the group's head carries it.
+  // The mapped status is the one the card folds on, so the pin reads it too:
+  // a status string the mapping does not know folds the card either way.
+  const pinnedOpen =
+    preferences.autoExpandSmallCards &&
+    calloutData.status === "completed" &&
+    !foldedMember &&
+    isSmallCardBody(calloutData);
 
   // Only a read or write of an image asks the daemon for bytes; the hook
   // itself refuses every other path, so a code read costs no RPC.
@@ -730,7 +744,8 @@ export function LiveToolCallRenderer({
       <ToolCallout
         data={calloutData}
         tokens={tokens}
-        defaultExpanded={isExpanded}
+        defaultExpanded={isExpanded || pinnedOpen}
+        pinnedOpen={pinnedOpen}
         story={singleStory}
         onRevealPath={handleRevealPath}
         imageFile={imageFile}

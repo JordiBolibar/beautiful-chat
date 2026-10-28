@@ -45,6 +45,12 @@ interface ToolCalloutProps {
   tokens: ExtendedThemeTokens;
   defaultExpanded?: boolean;
   /**
+   * The body is small and the `autoExpandSmallCards` preference is on, so the
+   * card keeps it open when the call completes instead of folding. A reader
+   * who folds the card by hand still wins.
+   */
+  pinnedOpen?: boolean;
+  /**
    * The plain-words line that replaces the raw command in the header,
    * Claude Code style: the pill still names the tool, the line says what it
    * did, and the command itself waits in the body.
@@ -64,6 +70,7 @@ export function ToolCallout({
   data,
   tokens,
   defaultExpanded = true,
+  pinnedOpen = false,
   story,
   onRevealPath,
   imageFile,
@@ -73,12 +80,24 @@ export function ToolCallout({
 
   // A card opens while its call runs so the output can be watched, and closes
   // itself when the call completes — a finished command with a wall of
-  // output is exactly what the fold is for. A fold the reader touched by
-  // hand is never yanked back: their choice outlives the run.
+  // output is exactly what the fold is for. A small body the preference
+  // pins open is the one exception. A fold the reader touched by hand is
+  // never yanked back: their choice outlives the run.
   useEffect(() => {
-    if (data.status !== "completed" || touched) return;
+    if (data.status !== "completed" || touched || pinnedOpen) return;
     setExpanded(false);
-  }, [data.status, touched]);
+  }, [data.status, touched, pinnedOpen]);
+
+  // Turning the preference on opens the small cards already on screen —
+  // the ones that mounted collapsed before the switch flipped. Cards deeper
+  // in the history are not mounted and cost nothing: they open as they
+  // scroll into view. A card the reader folded by hand stays folded, and
+  // turning the preference off folds the pinned ones back through the
+  // effect above.
+  useEffect(() => {
+    if (!pinnedOpen || touched) return;
+    setExpanded(true);
+  }, [pinnedOpen, touched]);
 
   // Every branch below needs a payload. A tool that carries none — a hub op
   // with no parsed record, an unmapped kind — would otherwise draw an empty

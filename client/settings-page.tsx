@@ -369,6 +369,14 @@ export function BeautifulChatSettingsPage({ theme }: PluginSurfaceProps) {
           tokens={tokens}
         />
 
+        <ToggleRow
+          title="Auto-expand small cards"
+          description="Keeps a finished card open when its body is small: a shell call with five or fewer output lines, an edit with five or fewer diff lines. Off folds every completed card, the old behaviour. Cards inside a group are not affected, and a card folded by hand stays folded. The composer pill next to the chat input switches the same setting."
+          value={preferences.autoExpandSmallCards}
+          onChange={(autoExpandSmallCards) => updateEnhancerPreferences({ autoExpandSmallCards })}
+          tokens={tokens}
+        />
+
         <ChoiceRow
           title="Markdown style"
           description="Document is airy and built for long answers. Compact tightens the spacing for short replies. Terminal sets the body in the code face."

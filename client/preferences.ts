@@ -54,6 +54,13 @@ export interface EnhancerPreferences {
    */
   groupWorkCalls: boolean;
   /**
+   * Keep small bodies open when the call completes: a shell card with five or
+   * fewer output lines, an edit card with five or fewer diff lines. Off is the
+   * old behaviour, every completed card folds. A card the reader folds by
+   * hand stays folded either way.
+   */
+  autoExpandSmallCards: boolean;
+  /**
    * The model-written one-liner for a finished group. The daemon sends the
    * run's command lines to the Mistral API to ask for it, so turning this
    * off keeps grouped commands on the machine; the rule-based line stays.
@@ -75,6 +82,7 @@ export const DEFAULT_PREFERENCES: Readonly<EnhancerPreferences> = {
   selectionActions: true,
   assistantMarkdown: true,
   groupWorkCalls: true,
+  autoExpandSmallCards: false,
   modelGroupSummaries: true,
   markdownVariant: "document",
 };
@@ -123,6 +131,10 @@ function loadPreferences(): EnhancerPreferences {
         typeof candidate.groupWorkCalls === "boolean"
           ? candidate.groupWorkCalls
           : DEFAULT_PREFERENCES.groupWorkCalls,
+      autoExpandSmallCards:
+        typeof candidate.autoExpandSmallCards === "boolean"
+          ? candidate.autoExpandSmallCards
+          : DEFAULT_PREFERENCES.autoExpandSmallCards,
       modelGroupSummaries:
         typeof candidate.modelGroupSummaries === "boolean"
           ? candidate.modelGroupSummaries
@@ -145,6 +157,16 @@ function publish(): void {
 
 export function getEnhancerPreferences(): EnhancerPreferences {
   return preferences;
+}
+
+/**
+ * Notifies on every preference change, for surfaces outside React (the
+ * composer pill) that must follow the settings page and the pill itself.
+ * Returns the unsubscribe function.
+ */
+export function subscribeEnhancerPreferences(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }
 
 export function updateEnhancerPreferences(update: Partial<EnhancerPreferences>): void {
