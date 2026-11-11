@@ -459,7 +459,7 @@ function tokenize(
  * Answers are cached on disk, keyed by the run's items, so a finished group
  * asks once and keeps its line across restarts.
  */
-const SUMMARY_MODEL = "mistral-small-latest";
+const SUMMARY_MODEL = "ministral-8b-latest";
 const SUMMARY_TIMEOUT_MS = 15_000;
 const SUMMARY_CACHE_PATH = join(
   homedir(),
