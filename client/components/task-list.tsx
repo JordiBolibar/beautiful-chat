@@ -174,7 +174,7 @@ export function TaskList({ data, tokens, onToggleTask }: TaskListProps) {
           fontFamily: tokens.fontUi,
           fontSize: 11,
           fontWeight: "600",
-          color: tokens.accent,
+          color: tokens.llm,
         },
         progressBarBackground: {
           height: 6,
@@ -314,7 +314,7 @@ export function TaskList({ data, tokens, onToggleTask }: TaskListProps) {
           <View style={styles.headerRight}>
             {isWorking ? (
               <View style={styles.statusRow}>
-                <PulseDot color={tokens.accent} size={6} />
+                <PulseDot color={tokens.llm} size={6} />
                 <Text selectable style={styles.statusText}>
                   Tasks
                 </Text>
@@ -356,11 +356,11 @@ export function TaskList({ data, tokens, onToggleTask }: TaskListProps) {
                   ) : isBlocked ? (
                     <Glyph name="AlertCircle" size={13} color={tokens.warning} />
                   ) : (
-                    <Glow active={isActive} color={tokens.accent} size={22}>
+                    <Glow active={isActive} color={tokens.llm} size={22}>
                       <Glyph
                         name="Circle"
                         size={13}
-                        color={isActive ? tokens.accent : tokens.foregroundSubtle}
+                        color={isActive ? tokens.llm : tokens.foregroundSubtle}
                       />
                     </Glow>
                   )}
@@ -382,7 +382,7 @@ export function TaskList({ data, tokens, onToggleTask }: TaskListProps) {
 
                   <View style={styles.taskFooterRow}>
                     {isActive && (
-                      <Text selectable style={[styles.statusLabel, { color: tokens.accent }]}>
+                      <Text selectable style={[styles.statusLabel, { color: tokens.llm }]}>
                         In Progress
                       </Text>
                     )}

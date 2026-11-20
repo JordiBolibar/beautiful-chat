@@ -135,9 +135,9 @@ export function ToolCallout({
   // inherits the shell sentence.
   const isShellCall = data.tool === "bash" || data.tool === "shell";
 
-  const statusColor = isSuccess ? tokens.success : isRunning ? tokens.accent : tokens.danger;
+  const statusColor = isSuccess ? tokens.success : isRunning ? tokens.llm : tokens.danger;
 
-  const statusBg = isSuccess ? tokens.successBg : isRunning ? tokens.accentBg : tokens.dangerBg;
+  const statusBg = isSuccess ? tokens.successBg : isRunning ? tokens.llmBg : tokens.dangerBg;
 
   const iconColor =
     data.tool === "git" ? "#F05032" : data.tool === "github" ? tokens.foreground : tokens.accent;
@@ -367,7 +367,7 @@ export function ToolCallout({
           borderRadius: radius.block,
           backgroundColor: tokens.surfaceCode,
           borderLeftWidth: 2,
-          borderLeftColor: tokens.accent,
+          borderLeftColor: tokens.llm,
           gap: 6,
           ...tokens.boxShadow,
         },
@@ -542,12 +542,12 @@ export function ToolCallout({
 
           {isRunning && (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-              <PulseDot color={tokens.accent} size={5} />
+              <PulseDot color={tokens.llm} size={5} />
               <Text
                 selectable
                 style={{
                   fontSize: 11,
-                  color: tokens.accent,
+                  color: tokens.llm,
                   fontWeight: "500",
                 }}
               >
@@ -618,7 +618,7 @@ export function ToolCallout({
                     gap: 6,
                   }}
                 >
-                  <Glyph name="Brain" size={13} color={tokens.accent} />
+                  <Glyph name="Brain" size={13} color={tokens.llm} />
                   <Text selectable style={styles.thinkingTitle}>
                     {data.thinking?.status === "thinking"
                       ? "Live Reasoning Stream…"
@@ -902,7 +902,7 @@ export function ToolCallout({
  * anything else the hub may report later.
  */
 function subagentTone(status: string, tokens: ExtendedThemeTokens): { fg: string; bg: string } {
-  if (status === "running") return { fg: tokens.accent, bg: tokens.accentBg };
+  if (status === "running") return { fg: tokens.llm, bg: tokens.llmBg };
   if (status === "completed") return { fg: tokens.success, bg: tokens.successBg };
   if (status === "failed") return { fg: tokens.danger, bg: tokens.dangerBg };
   return { fg: tokens.foregroundMuted, bg: tokens.surface2 };
@@ -969,7 +969,7 @@ function SubagentBatch({
   return (
     <View style={styles.batch}>
       <View style={styles.head}>
-        <Glyph name="Bot" size={13} color={tokens.accent} />
+        <Glyph name="Bot" size={13} color={tokens.llm} />
         <Text selectable style={styles.headline} numberOfLines={1}>
           {headline}
         </Text>
@@ -1012,7 +1012,7 @@ function SubagentBatch({
 
       {running ? (
         <View style={styles.pending}>
-          <PulseDot color={tokens.accent} size={5} />
+          <PulseDot color={tokens.llm} size={5} />
           <Text style={styles.pendingText}>{pending}</Text>
         </View>
       ) : null}
@@ -1134,7 +1134,7 @@ function useSubagentStyles(tokens: ExtendedThemeTokens): SubagentStyles {
           fontFamily: tokens.fontUi,
           fontSize: 11,
           fontWeight: "500",
-          color: tokens.accent,
+          color: tokens.llm,
           ...unselectable,
         },
       }),
@@ -1331,7 +1331,7 @@ export function ToolGroupCard({ groupId, members, tokens, cwd, onRevealPath }: T
                   failedCount > 0
                     ? tokens.danger
                     : anyRunning
-                      ? tokens.accent
+                      ? tokens.llm
                       : tokens.success,
               },
             ]}
@@ -1364,12 +1364,12 @@ export function ToolGroupCard({ groupId, members, tokens, cwd, onRevealPath }: T
 
           {anyRunning && (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-              <PulseDot color={tokens.accent} size={5} />
+              <PulseDot color={tokens.llm} size={5} />
               <Text
                 selectable
                 style={{
                   fontSize: 11,
-                  color: tokens.accent,
+                  color: tokens.llm,
                   fontWeight: "500",
                 }}
               >

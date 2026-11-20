@@ -85,7 +85,7 @@ export function ReasoningTrace({ data, tokens, defaultExpanded = false }: Reason
           justifyContent: "space-between",
           paddingHorizontal: 14,
           paddingVertical: 10,
-          backgroundColor: isThinking ? tokens.accentBg : tokens.surface1,
+          backgroundColor: isThinking ? tokens.llmBg : tokens.surface1,
         },
         headerLeft: {
           flexDirection: "row",
@@ -150,7 +150,7 @@ export function ReasoningTrace({ data, tokens, defaultExpanded = false }: Reason
           fontFamily: tokens.fontUi,
           fontSize: 11,
           fontWeight: "600",
-          color: tokens.accent,
+          color: tokens.llm,
         },
         body: {
           paddingHorizontal: 16,
@@ -244,7 +244,7 @@ export function ReasoningTrace({ data, tokens, defaultExpanded = false }: Reason
               <Glyph
                 name="Brain"
                 size={13}
-                color={isThinking ? tokens.accent : tokens.foregroundMuted}
+                color={isThinking ? tokens.llm : tokens.foregroundMuted}
               />
             </Breathe>
           </View>
@@ -284,7 +284,7 @@ export function ReasoningTrace({ data, tokens, defaultExpanded = false }: Reason
               "Completed" pill only adds colour. */}
           {isThinking ? (
             <View style={styles.statusRow}>
-              <PulseDot color={tokens.accent} size={6} />
+              <PulseDot color={tokens.llm} size={6} />
               <Text selectable style={styles.statusText}>
                 Reasoning
               </Text>
@@ -319,11 +319,11 @@ export function ReasoningTrace({ data, tokens, defaultExpanded = false }: Reason
                     {isStepDone ? (
                       <Glyph name="CheckCircle" size={13} color={tokens.success} />
                     ) : (
-                      <Glow active={isStepActive} color={tokens.accent} size={22}>
+                      <Glow active={isStepActive} color={tokens.llm} size={22}>
                         <Glyph
                           name="Circle"
                           size={13}
-                          color={isStepActive ? tokens.accent : tokens.foregroundSubtle}
+                          color={isStepActive ? tokens.llm : tokens.foregroundSubtle}
                         />
                       </Glow>
                     )}

@@ -52,8 +52,14 @@ export interface ExtendedThemeTokens {
   accent: string;
   accentForeground: string;
   accentBg: string;
+  // The agent at work: thinking, running and active states. Orange, the hue of
+  // the Claude and Mistral logos, so the accent stays for actions and for the
+  // user's own turn.
+  llm: string;
+  llmBg: string;
   // The authored turn sits on a raised theme surface, exactly as the native
-  // stream draws it. It carries no accent: colour belongs to the agent's work.
+  // stream draws it, with a soft wash of the accent hue: it reads as the
+  // user's voice without taking the full accent.
   userSurface: string;
   userBorder: string;
   userText: string;
@@ -98,8 +104,8 @@ export interface ExtendedThemeTokens {
     hunk: string;
   };
 
-  // Terminal surfaces (shell cards and command output), on the Catppuccin
-  // palette: Mocha on dark themes, Latte on light ones.
+  // Terminal surfaces (shell cards and command output), on the Atom One Dark
+  // palette: One Dark on dark themes, One Light on light ones.
   terminal: {
     body: string;
     prompt: string;
@@ -188,8 +194,13 @@ export function buildThemeTokens(
   const isDark = isDarkSurface(colors.surface0);
   const fg = colors.foreground;
   const accent = ACCENT_PRESETS[preferences.accent] ?? colors.accent;
+  // Hue-carrying base for surfaces: the accent's hue at the foreground's
+  // lightness. Cards, borders and washes built from it take a soft tint of
+  // the theme's colour instead of a neutral grey, on any Paseo theme.
+  const wash = mix(fg, accent, isDark ? 0.55 : 0.45);
   const success = isDark ? "#4cb782" : "#1f8a5b";
   const warning = isDark ? "#d9a53f" : "#a36a00";
+  const llm = isDark ? "#f0875a" : "#c8501f";
   const danger = colors.statusDanger;
   const tint = isDark ? 0.1 : 0.08;
   const edge = isDark ? 0.22 : 0.18;
@@ -201,9 +212,11 @@ export function buildThemeTokens(
     fontUi: preferences.uiFont === "system" ? "System" : fontUi,
 
     surface0: colors.surface0,
-    surface1: withAlpha(fg, isDark ? 0.03 : 0.025),
-    surface2: withAlpha(fg, isDark ? 0.06 : 0.045),
-    surfaceCode: isDark ? "rgba(0, 0, 0, 0.22)" : withAlpha(fg, 0.03),
+    surface1: withAlpha(wash, isDark ? 0.04 : 0.03),
+    surface2: withAlpha(wash, isDark ? 0.075 : 0.055),
+    surfaceCode: isDark
+      ? withAlpha(mix("#000000", accent, 0.35), 0.24)
+      : withAlpha(wash, 0.04),
     // Translucent so the blur behind them reads, but still dense enough to
     // keep text legible over whatever scrolls past.
     surfaceGlass: preferences.frostedGlass
@@ -211,11 +224,11 @@ export function buildThemeTokens(
       : colors.surface0,
     surfaceCodeGlass: preferences.frostedGlass
       ? isDark
-        ? "rgba(0, 0, 0, 0.34)"
-        : withAlpha(fg, 0.05)
+        ? withAlpha(mix("#000000", accent, 0.35), 0.34)
+        : withAlpha(wash, 0.05)
       : isDark
-        ? "rgba(0, 0, 0, 0.22)"
-        : withAlpha(fg, 0.03),
+        ? withAlpha(mix("#000000", accent, 0.35), 0.24)
+        : withAlpha(wash, 0.04),
 
     foreground: fg,
     foregroundMuted: colors.foregroundMuted,
@@ -224,8 +237,12 @@ export function buildThemeTokens(
     accent,
     accentForeground: colors.accentForeground,
     accentBg: withAlpha(accent, isDark ? 0.14 : 0.1),
-    userSurface: withAlpha(fg, isDark ? 0.1 : 0.06),
-    userBorder: withAlpha(fg, isDark ? 0.14 : 0.12),
+    llm,
+    llmBg: withAlpha(llm, isDark ? 0.14 : 0.1),
+    // The user's turn takes the accent hue itself, so it stands out from the
+    // grey agent surfaces. The agent's own activity is orange (`llm`).
+    userSurface: withAlpha(accent, isDark ? 0.17 : 0.1),
+    userBorder: withAlpha(accent, isDark ? 0.4 : 0.3),
     userText: fg,
     userTextMuted: colors.foregroundMuted,
 
@@ -241,8 +258,8 @@ export function buildThemeTokens(
     dangerBg: withAlpha(danger, tint),
     dangerBorder: withAlpha(danger, edge),
 
-    border: withAlpha(fg, isDark ? 0.09 : 0.1),
-    borderSubtle: withAlpha(fg, 0.06),
+    border: withAlpha(wash, isDark ? 0.11 : 0.12),
+    borderSubtle: withAlpha(wash, 0.07),
     boxShadow: {
       shadowColor: "#000000",
       shadowOffset: { width: 0, height: 2 },
@@ -251,14 +268,15 @@ export function buildThemeTokens(
       elevation: 1,
     },
 
-    // GitHub Dark Dimmed / GitHub Light
+    // Atom One Dark / One Light (github.com/atom/one), the same palette the
+    // user's editor uses. Code blocks and shell output read as one set.
     syntax: {
-      keyword: isDark ? "#f47067" : "#cf222e",
-      string: isDark ? "#96d0ff" : "#0a3069",
-      number: isDark ? "#6cb6ff" : "#0550ae",
-      comment: isDark ? "#768390" : "#6e7781",
-      property: isDark ? "#6cb6ff" : "#0550ae",
-      function: isDark ? "#dcbdfb" : "#8250df",
+      keyword: isDark ? "#c678dd" : "#a626a4", // purple
+      string: isDark ? "#98c379" : "#50a14f", // green
+      number: isDark ? "#d19a66" : "#986801", // orange
+      comment: isDark ? "#5c6370" : "#a0a1a7", // comment grey
+      property: isDark ? "#e06c75" : "#e45649", // red
+      function: isDark ? "#61afef" : "#4078f2", // blue
       diffAddBg: withAlpha(success, tint),
       diffAddMarker: success,
       diffRemoveBg: withAlpha(danger, tint),
@@ -266,42 +284,40 @@ export function buildThemeTokens(
       hunk: withAlpha(colors.foregroundMuted, 0.7),
     },
 
-    // Catppuccin (github.com/catppuccin/catppuccin), the popular pastel
-    // terminal palette: Mocha on dark, Latte on light. Shell output reads
-    // better with its wider, warmer range than the GitHub syntax set the
-    // code blocks keep.
+    // Atom One Dark / One Light, matching the syntax palette above so shell
+    // cards and code blocks read as one set.
     terminal: isDark
       ? {
-          body: "#bac2de", // subtext1
-          prompt: "#6c7086", // overlay0
-          command: "#cba6f7", // mauve
-          subcommand: "#f9e2af", // yellow
-          operator: "#f5c2e7", // pink
-          flag: "#89dceb", // sky
-          string: "#a6e3a1", // green
-          number: "#fab387", // peach
-          path: "#94e2d5", // teal
-          url: "#74c7ec", // sapphire
-          comment: "#7f849c", // overlay1
-          success: "#a6e3a1",
-          danger: "#f38ba8",
-          warning: "#f9e2af",
+          body: "#abb2bf", // foreground
+          prompt: "#5c6370", // comment grey
+          command: "#c678dd", // purple
+          subcommand: "#e5c07b", // yellow
+          operator: "#e06c75", // red
+          flag: "#56b6c2", // cyan
+          string: "#98c379", // green
+          number: "#d19a66", // orange
+          path: "#61afef", // blue
+          url: "#56b6c2", // cyan
+          comment: "#5c6370", // comment grey
+          success: "#98c379",
+          danger: "#e06c75",
+          warning: "#e5c07b",
         }
       : {
-          body: "#5c5f77", // subtext1
-          prompt: "#9ca0b0", // overlay0
-          command: "#8839ef", // mauve
-          subcommand: "#df8e1d", // yellow
-          operator: "#ea76cb", // pink
-          flag: "#04a5e5", // sky
-          string: "#40a02b", // green
-          number: "#fe640b", // peach
-          path: "#179299", // teal
-          url: "#209fb5", // sapphire
-          comment: "#8c8fa1", // overlay1
-          success: "#40a02b",
-          danger: "#d20f39",
-          warning: "#df8e1d",
+          body: "#383a42", // foreground
+          prompt: "#a0a1a7", // comment grey
+          command: "#a626a4", // purple
+          subcommand: "#c18401", // yellow
+          operator: "#e45649", // red
+          flag: "#0184bc", // cyan
+          string: "#50a14f", // green
+          number: "#986801", // orange
+          path: "#4078f2", // blue
+          url: "#0184bc", // cyan
+          comment: "#a0a1a7", // comment grey
+          success: "#50a14f",
+          danger: "#e45649",
+          warning: "#c18401",
         },
   };
 }

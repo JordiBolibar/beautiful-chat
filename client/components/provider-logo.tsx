@@ -8,6 +8,7 @@ export type KnownProvider =
   | "paseo"
   | "claude"
   | "codex"
+  | "mistral"
   | "omp"
   | "gemini"
   | "antigravity"
@@ -30,6 +31,8 @@ export function normalizeProvider(provider: string): KnownProvider {
   if (p.includes("paseo")) return "paseo";
   if (p.includes("claude") || p.includes("anthropic")) return "claude";
   if (p.includes("codex") || p.includes("openai") || p.includes("gpt")) return "codex";
+  // Paseo's Mistral provider ids are "mistral-vibe" and "vibe".
+  if (p.includes("mistral") || p.includes("vibe")) return "mistral";
   // "pi" must stand alone as a word: a bare substring test also claims
   // "co-pi-lot" and routes GitHub Copilot to the Oh My Pi glyph.
   if (p.includes("omp") || /(?:^|[^a-z])pi(?:[^a-z]|$)/.test(p)) return "omp";
@@ -122,6 +125,7 @@ const PROVIDER_CONFIGS: Record<KnownProvider, ProviderMeta> = {
   paseo: { displayName: "Paseo", brandColor: "#6366F1" },
   claude: { displayName: "Claude", brandColor: "#D97757" },
   codex: { displayName: "Codex", brandColor: "#10A37F" },
+  mistral: { displayName: "Mistral", brandColor: "#FA520F" },
   omp: { displayName: "Oh My Pi", brandColor: "#818CF8" },
   gemini: { displayName: "Gemini", brandColor: "#4285F4" },
   antigravity: { displayName: "Antigravity", brandColor: "#00B95C" },

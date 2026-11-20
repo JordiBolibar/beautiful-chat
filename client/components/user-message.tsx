@@ -73,9 +73,9 @@ function UsageFigure({
 }
 
 /**
- * The user's turn. It sits to the left on light paper with dark text and no
- * accent: colour on this surface marks agent activity, so keeping it off the
- * prompt is what separates what the user wrote from what the agent did.
+ * The user's turn. It sits to the left on a wash of the theme accent: the
+ * accent marks the user's voice, while the agent's own activity is orange
+ * (`llm`), so what the user wrote stands out from what the agent did.
  * The body text stays left-aligned inside the block, because right-ragged
  * prose is harder to read once it wraps.
  */

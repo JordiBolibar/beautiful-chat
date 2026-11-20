@@ -428,15 +428,15 @@ function ListModelsView({
                     paddingHorizontal: 5,
                     paddingVertical: 1,
                     borderRadius: radius.chip,
-                    backgroundColor: tokens.accentBg,
+                    backgroundColor: tokens.llmBg,
                   }}
                 >
-                  <Glyph name="Brain" size={10} color={tokens.accent} />
+                  <Glyph name="Brain" size={10} color={tokens.llm} />
                   <Text
                     selectable
                     style={{
                       fontSize: 10,
-                      color: tokens.accent,
+                      color: tokens.llm,
                       fontWeight: "600",
                     }}
                   >
@@ -519,7 +519,7 @@ function GetActivityView({
                 act.kind === "tool" ? "Wrench" : act.kind === "thinking" ? "Brain" : "MessageSquare"
               }
               size={11}
-              color={act.kind === "thinking" ? tokens.accent : tokens.accent}
+              color={act.kind === "thinking" ? tokens.llm : tokens.accent}
             />
             <Text
               selectable
